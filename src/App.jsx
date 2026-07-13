@@ -6,25 +6,21 @@ import KpiCards from './components/KpiCards.jsx';
 import AssetsTable from './components/AssetsTable.jsx';
 import AddAccountModal from './components/AddAccountModal.jsx';
 import AddAssetPanel from './components/AddAssetPanel.jsx';
-import { initialAccounts, initialAssets } from './data/initialData.js';
-import {
-  assetValueARS,
-  assetInvestedARS,
-  assetGainPct,
-  calcAveragePrice,
-  todayDDMMYYYY,
-  USD_ARS,
-} from './utils/finance.js';
+import { useAuth } from './context/AuthContext.jsx';
+import { usePortfolio } from './hooks/usePortfolio.js';
+import { assetValueARS, assetInvestedARS, assetGainPct, USD_ARS } from './utils/finance.js';
 
 const LIVE_MARKET_CATEGORIES = ['Acción', 'CEDEAR', 'Cripto'];
 
 export default function App() {
-  const [accounts, setAccounts] = useState(initialAccounts);
-  const [assets, setAssets] = useState(initialAssets);
+  const { user, signOut } = useAuth();
+  const { accounts, assets, setAssets, loading, error, createAccount, addAsset } =
+    usePortfolio(user);
   const [currency, setCurrency] = useState('ARS');
   const [hora, setHora] = useState('');
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAddAsset, setShowAddAsset] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   useEffect(() => {
     const tick = () => {
@@ -46,7 +42,7 @@ export default function App() {
     tick();
     const id = setInterval(tick, 2000);
     return () => clearInterval(id);
-  }, []);
+  }, [setAssets]);
 
   const totalARS = useMemo(() => assets.reduce((sum, a) => sum + assetValueARS(a), 0), [assets]);
   const investedARS = useMemo(
@@ -80,50 +76,33 @@ export default function App() {
 
   const conv = (v) => (currency === 'USD' ? v / USD_ARS : v);
 
-  const handleCreateAccount = (data) => {
-    const id = data.name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now().toString(36);
-    setAccounts((prev) => [...prev, { id, ...data }]);
-    setShowAddAccount(false);
+  const handleCreateAccount = async (data) => {
+    try {
+      setActionError('');
+      await createAccount(data);
+      setShowAddAccount(false);
+    } catch (e) {
+      setActionError(e.message);
+    }
   };
 
-  const handleAddAssetSubmit = (payload) => {
-    const dateStr = todayDDMMYYYY();
-    if (payload.type === 'existing') {
-      setAssets((prev) =>
-        prev.map((a) => {
-          if (a.id !== payload.assetId) return a;
-          const { newQty, newAvgPrice } = calcAveragePrice(a.qty, a.avgPrice, payload.qty, payload.price);
-          return {
-            ...a,
-            qty: newQty,
-            avgPrice: newAvgPrice,
-            history: [...a.history, { date: dateStr, qty: payload.qty, price: payload.price }],
-          };
-        })
-      );
-    } else {
-      const id = payload.asset.ticker.toLowerCase() + '-' + Date.now().toString(36);
-      setAssets((prev) => [
-        ...prev,
-        {
-          id,
-          ticker: payload.asset.ticker,
-          name: payload.asset.name,
-          category: payload.asset.category,
-          accountId: payload.asset.accountId,
-          currency: payload.asset.currency,
-          qty: payload.qty,
-          avgPrice: payload.price,
-          currentPrice: payload.price,
-          iconBg: 'rgba(255,255,255,.1)',
-          iconColor: '#e8eaee',
-          iconLabel: payload.asset.ticker.slice(0, 2).toUpperCase(),
-          history: [{ date: dateStr, qty: payload.qty, price: payload.price }],
-        },
-      ]);
+  const handleAddAssetSubmit = async (payload) => {
+    try {
+      setActionError('');
+      await addAsset(payload);
+      setShowAddAsset(false);
+    } catch (e) {
+      setActionError(e.message);
     }
-    setShowAddAsset(false);
   };
+
+  if (loading) {
+    return (
+      <div className="auth-shell">
+        <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>Cargando tu portfolio…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -131,6 +110,8 @@ export default function App() {
         accounts={accounts}
         accountBalances={accountBalances}
         onConnectAccount={() => setShowAddAccount(true)}
+        onSignOut={signOut}
+        userEmail={user.email}
       />
       <main className="main">
         <TopBar
@@ -146,6 +127,9 @@ export default function App() {
           liquidity={conv(liquidityARS)}
           currency={currency}
         />
+        {(error || actionError) && (
+          <div style={{ color: 'var(--negative)', fontSize: 12.5 }}>{error || actionError}</div>
+        )}
         <AssetsTable
           assets={assets}
           accounts={accounts}

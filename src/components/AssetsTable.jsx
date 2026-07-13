@@ -21,6 +21,12 @@ export default function AssetsTable({ assets, accounts, currency, onAddAsset }) 
         </button>
       </div>
 
+      {assets.length === 0 ? (
+        <div style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>
+          No tenés activos todavía — agregá tu primera operación.
+        </div>
+      ) : (
+        <>
       <div className="grid-row head">
         <div>Activo</div>
         <div className="text-right">Cantidad</div>
@@ -69,6 +75,8 @@ export default function AssetsTable({ assets, accounts, currency, onAddAsset }) 
           </div>
         );
       })}
+        </>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { formatMoney } from '../utils/finance.js';
+import { formatMoney, formatPct } from '../utils/finance.js';
 
 export default function KpiCards({ invested, bestAsset, liquidity, currency }) {
   return (
@@ -9,8 +9,8 @@ export default function KpiCards({ invested, bestAsset, liquidity, currency }) {
       </div>
       <div className="kpi-card">
         <div className="kpi-label">Mejor activo del mes</div>
-        <div className="kpi-value mono positive">
-          {bestAsset ? `${bestAsset.ticker} +${bestAsset.pct.toFixed(1).replace('.', ',')}%` : '—'}
+        <div className={'kpi-value mono' + (bestAsset && bestAsset.pct < 0 ? ' negative' : ' positive')}>
+          {bestAsset ? `${bestAsset.ticker} ${formatPct(bestAsset.pct)}` : '—'}
         </div>
       </div>
       <div className="kpi-card">
