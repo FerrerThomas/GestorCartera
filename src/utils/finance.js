@@ -66,9 +66,19 @@ export function calcAveragePrice(prevQty, prevAvgPrice, addQty, addPrice) {
   return { newQty, newInvested, newAvgPrice };
 }
 
-export function todayDDMMYYYY() {
-  const d = new Date();
+export function formatDateDDMMYYYY(dateInput) {
+  // Plain "YYYY-MM-DD" (e.g. a Postgres `date` column) has no timezone —
+  // parse it manually so we don't shift a day via UTC->local conversion.
+  if (typeof dateInput === 'string') {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateInput);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  }
+  const d = dateInput ? new Date(dateInput) : new Date();
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
+export function todayDDMMYYYY() {
+  return formatDateDDMMYYYY();
 }

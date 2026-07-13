@@ -5,6 +5,32 @@
   color: var(--text);
 }
 
+/* ---------- Auth ---------- */
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  padding: 24px;
+}
+
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 11px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: #fff;
+  color: #1f1f1f;
+  font: 600 13.5px Archivo, sans-serif;
+}
+
+.btn-google:hover {
+  background: #f4f4f4;
+}
+
 /* ---------- Sidebar ---------- */
 .sidebar {
   width: 248px;
