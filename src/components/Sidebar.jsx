@@ -1,7 +1,16 @@
 import { ACCOUNT_DOT_COLOR } from '../data/initialData.js';
-import { formatMoney } from '../utils/finance.js';
+import { convertAmount, formatMoney } from '../utils/finance.js';
 
-export default function Sidebar({ accounts, accountBalances, onConnectAccount, onSignOut, userEmail }) {
+export default function Sidebar({
+  accounts,
+  accountBalances,
+  currency,
+  usdArs,
+  onConnectAccount,
+  onAddAssetToAccount,
+  onSignOut,
+  userEmail,
+}) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -25,7 +34,22 @@ export default function Sidebar({ accounts, accountBalances, onConnectAccount, o
         ) : (
           <div className="accounts-list">
             {accounts.map((acc) => (
-              <div className="account-row" key={acc.id}>
+              <button
+                type="button"
+                className="account-row"
+                key={acc.id}
+                onClick={() => onAddAssetToAccount(acc.id)}
+                title={`Agregar activo a ${acc.name}`}
+                style={{
+                  width: '100%',
+                  background: 'none',
+                  border: '1px solid var(--border)',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                  color: 'inherit',
+                  textAlign: 'left',
+                }}
+              >
                 <div className="account-row-left">
                   <span
                     className="account-dot"
@@ -34,9 +58,12 @@ export default function Sidebar({ accounts, accountBalances, onConnectAccount, o
                   <span className="account-name">{acc.name}</span>
                 </div>
                 <span className="account-balance">
-                  {formatMoney(accountBalances[acc.id] ?? 0, acc.currency)}
+                  {formatMoney(
+                    convertAmount(accountBalances[acc.id] ?? 0, 'ARS', currency, usdArs),
+                    currency
+                  )}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         )}

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ACCOUNT_TYPES } from '../data/initialData.js';
+import { POPULAR_WALLETS, getWalletLogoUrl } from '../data/logos.js';
 
 export default function AddAccountModal({ onClose, onCreate }) {
   const [step, setStep] = useState(1);
@@ -60,6 +61,24 @@ export default function AddAccountModal({ onClose, onCreate }) {
 
         {step === 2 && (
           <div className="form-footer" style={{ paddingTop: 24 }}>
+            {type === 'billetera' && (
+              <div className="field">
+                <span className="field-label">Billeteras populares</span>
+                <div className="wallet-chips">
+                  {POPULAR_WALLETS.map((w) => (
+                    <button
+                      type="button"
+                      key={w.name}
+                      className={'wallet-chip' + (name === w.name ? ' selected' : '')}
+                      onClick={() => setName(w.name)}
+                    >
+                      <img src={getWalletLogoUrl(w.name)} alt="" />
+                      {w.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="field-grid">
               <label className="field">
                 <span className="field-label">Nombre de la cuenta</span>

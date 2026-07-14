@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   calcAveragePrice,
   formatMoney,
@@ -6,67 +6,142 @@ import {
   parseLocaleNumber,
   todayDDMMYYYY,
 } from '../utils/finance.js';
+import { fetchArgCedearsCatalog, fetchArgStocksCatalog, fetchDolarBlue } from '../services/marketData.js';
+import { CRYPTO_CATALOG } from '../data/cryptoCatalog.js';
+import TickerPicker from './TickerPicker.jsx';
 
-const CATEGORIES = ['Acción', 'CEDEAR', 'Cripto', 'Fondo money market', 'Efectivo'];
+const EFECTIVO_OPTIONS = [
+  { ticker: 'ARS', name: 'Pesos' },
+  { ticker: 'USD', name: 'Dólar billete' },
+];
 
-export default function AddAssetPanel({ assets, accounts, onClose, onSubmit }) {
-  const purchasable = assets.filter((a) => a.kind !== 'fund');
-  const [mode, setMode] = useState('existing'); // 'existing' | 'new'
+export default function AddAssetPanel({ assets, accounts, initialAccountId, onClose, onSubmit }) {
+  const [accountId, setAccountId] = useState(initialAccountId ?? accounts[0]?.id ?? '');
+  const account = accounts.find((a) => a.id === accountId);
+  const accountType = account?.type;
+  const isBilletera = accountType === 'billetera';
+
+  const purchasableAll = assets.filter((a) => a.kind !== 'fund');
+  const purchasable = useMemo(
+    () => purchasableAll.filter((a) => a.accountId === accountId),
+    [purchasableAll, accountId]
+  );
+  const existingFund = assets.find((a) => a.accountId === accountId && a.kind === 'fund');
+
   const [tab, setTab] = useState('compra');
-  const [assetId, setAssetId] = useState(purchasable[0]?.id ?? '');
+  const [brokerCategory, setBrokerCategory] = useState('Acción');
+  const [ticker, setTicker] = useState('');
+  const [efectivoCurrency, setEfectivoCurrency] = useState('ARS');
   const [addQty, setAddQty] = useState('');
   const [addPrice, setAddPrice] = useState('');
+  const [depositAmount, setDepositAmount] = useState('');
+  const [depositTna, setDepositTna] = useState('17,5');
 
-  const [newTicker, setNewTicker] = useState('');
-  const [newName, setNewName] = useState('');
-  const [newCategory, setNewCategory] = useState(CATEGORIES[0]);
-  const [newAccountId, setNewAccountId] = useState(accounts[0]?.id ?? '');
+  const [stocksCatalog, setStocksCatalog] = useState([]);
+  const [cedearsCatalog, setCedearsCatalog] = useState([]);
+  const [dolarBlueLive, setDolarBlueLive] = useState(null);
 
-  const asset = purchasable.find((a) => a.id === assetId);
-  const account = accounts.find((a) => a.id === asset?.accountId);
+  // Reset selections whenever the account (and therefore its type) changes.
+  useEffect(() => {
+    setTab('compra');
+    setBrokerCategory('Acción');
+    setTicker('');
+    setEfectivoCurrency(account?.currency ?? 'ARS');
+    setAddQty('');
+    setAddPrice('');
+    setDepositAmount('');
+    setDepositTna(existingFund ? String(existingFund.tna).replace('.', ',') : '17,5');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
+
+  useEffect(() => {
+    if (accountType === 'broker' && brokerCategory === 'Acción' && stocksCatalog.length === 0) {
+      fetchArgStocksCatalog().then(setStocksCatalog);
+    }
+    if (accountType === 'broker' && brokerCategory === 'CEDEAR' && cedearsCatalog.length === 0) {
+      fetchArgCedearsCatalog().then(setCedearsCatalog);
+    }
+  }, [accountType, brokerCategory, stocksCatalog.length, cedearsCatalog.length]);
+
+  const category =
+    accountType === 'exchange' ? 'Cripto' : accountType === 'broker' ? brokerCategory : 'Efectivo';
+  const selectedTicker = accountType === 'efectivo' ? efectivoCurrency : ticker;
+  const existingAsset = purchasable.find((a) => a.ticker === selectedTicker);
+
+  useEffect(() => {
+    if (
+      accountType === 'efectivo' &&
+      efectivoCurrency === 'USD' &&
+      !existingAsset &&
+      dolarBlueLive == null
+    ) {
+      fetchDolarBlue().then(setDolarBlueLive);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountType, efectivoCurrency, existingAsset]);
 
   const q = parseLocaleNumber(addQty);
-  const p = parseLocaleNumber(addPrice);
-  const priceCurrency = mode === 'new' ? 'ARS' : asset?.currency === 'USD' ? 'USD' : 'ARS';
+  const isEfectivo = accountType === 'efectivo';
+  const efectivoPrice =
+    efectivoCurrency === 'ARS' ? 1 : existingAsset?.currentPrice ?? dolarBlueLive ?? 0;
+  const p = isEfectivo ? efectivoPrice : parseLocaleNumber(addPrice);
+  const assetCurrency = accountType === 'exchange' ? 'USD' : 'ARS';
+  const priceCurrency = existingAsset ? (existingAsset.currency === 'USD' ? 'USD' : 'ARS') : assetCurrency;
 
   const calc = useMemo(() => {
-    if (mode === 'new') {
-      return calcAveragePrice(0, 0, q, p);
-    }
-    if (!asset) return { newQty: 0, newInvested: 0, newAvgPrice: 0 };
-    return calcAveragePrice(asset.qty, asset.avgPrice, q, p);
-  }, [mode, asset, q, p]);
+    if (!existingAsset) return calcAveragePrice(0, 0, q, p);
+    return calcAveragePrice(existingAsset.qty, existingAsset.avgPrice, q, p);
+  }, [existingAsset, q, p]);
 
-  const currentPrice = mode === 'new' ? p : asset?.currentPrice ?? 0;
+  const currentPrice = existingAsset ? existingAsset.currentPrice ?? 0 : p;
   const gp = calc.newQty * currentPrice - calc.newInvested;
   const gpPct = calc.newInvested > 0 ? (gp / calc.newInvested) * 100 : 0;
   const opTotal = q * p;
 
-  const canSubmit =
-    tab === 'compra' &&
-    q > 0 &&
-    p > 0 &&
-    (mode === 'existing' ? !!asset : newTicker.trim() && newName.trim());
+  const nameFor = (t) => {
+    if (accountType === 'exchange') return CRYPTO_CATALOG.find((c) => c.ticker === t)?.name ?? t;
+    if (accountType === 'efectivo') return EFECTIVO_OPTIONS.find((c) => c.ticker === t)?.name ?? t;
+    return t;
+  };
+
+  const canSubmit = tab === 'compra' && !!selectedTicker && q > 0 && p > 0;
 
   const submit = () => {
     if (!canSubmit) return;
-    if (mode === 'existing') {
-      onSubmit({ type: 'existing', assetId, qty: q, price: p });
+    if (existingAsset) {
+      onSubmit({ type: 'existing', assetId: existingAsset.id, qty: q, price: p });
     } else {
       onSubmit({
         type: 'new',
         qty: q,
         price: p,
         asset: {
-          ticker: newTicker.trim().toUpperCase(),
-          name: newName.trim(),
-          category: newCategory,
-          accountId: newAccountId,
-          currency: 'ARS',
+          ticker: selectedTicker,
+          name: nameFor(selectedTicker),
+          category,
+          accountId,
+          currency: assetCurrency,
         },
       });
     }
   };
+
+  const depositAmountNum = parseLocaleNumber(depositAmount);
+  const depositTnaNum = parseLocaleNumber(depositTna);
+  const canSubmitDeposit = depositAmountNum > 0 && depositTnaNum >= 0;
+
+  const submitDeposit = () => {
+    if (!canSubmitDeposit) return;
+    onSubmit({
+      type: 'fund_topup',
+      accountId,
+      amount: depositAmountNum,
+      tna: depositTnaNum,
+      existingAssetId: existingFund?.id ?? null,
+    });
+  };
+
+  const stockOptions = brokerCategory === 'Acción' ? stocksCatalog : cedearsCatalog;
 
   return (
     <div className="modal-overlay" onMouseDown={onClose}>
@@ -80,19 +155,10 @@ export default function AddAssetPanel({ assets, accounts, onClose, onSubmit }) {
           </button>
         </div>
         <div className="asset-panel-crumb">
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: 'var(--accent)',
-            }}
-          />
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)' }} />
           <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>
             Cuentas /{' '}
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>
-              {mode === 'existing' ? account?.name ?? '—' : accounts.find((a) => a.id === newAccountId)?.name ?? '—'}
-            </span>{' '}
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>{account?.name ?? '—'}</span>{' '}
             / Agregar operación
           </span>
         </div>
@@ -100,208 +166,273 @@ export default function AddAssetPanel({ assets, accounts, onClose, onSubmit }) {
         <div className="asset-panel-body">
           {/* form */}
           <div className="asset-panel-form">
-            <div className="tab-row">
-              <button
-                className={'tab-pill' + (tab === 'compra' ? ' active' : '')}
-                onClick={() => setTab('compra')}
-              >
-                Compra
-              </button>
-              <button
-                className={'tab-pill' + (tab === 'venta' ? ' active' : '')}
-                onClick={() => setTab('venta')}
-              >
-                Venta
-              </button>
-              <button
-                className={'tab-pill' + (tab === 'deposito' ? ' active' : '')}
-                onClick={() => setTab('deposito')}
-              >
-                Depósito de capital
-              </button>
-            </div>
+            <label className="field">
+              <span className="field-label">Cuenta</span>
+              <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-            {tab !== 'compra' && (
-              <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '8px 0' }}>
-                Próximamente. Por ahora podés registrar compras.
-              </div>
-            )}
-
-            {tab === 'compra' && (
+            {isBilletera ? (
               <>
-                <label className="field">
-                  <span className="field-label">Activo</span>
-                  {mode === 'existing' ? (
-                    <div className="asset-select-box">
-                      {asset && (
-                        <span
-                          className="asset-icon"
-                          style={{ background: asset.iconBg, color: asset.iconColor, width: 26, height: 26 }}
-                        >
-                          {asset.iconLabel}
-                        </span>
-                      )}
-                      <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-                        {purchasable.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.ticker} — {a.name}
-                          </option>
-                        ))}
-                      </select>
-                      {asset && <span className="have-qty">ya tenés {formatQty(asset.qty)}</span>}
-                    </div>
-                  ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
-                      <input
-                        placeholder="Ticker"
-                        value={newTicker}
-                        onChange={(e) => setNewTicker(e.target.value)}
-                      />
-                      <input
-                        placeholder="Nombre"
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                      />
-                    </div>
-                  )}
+                <div style={{ color: 'var(--text-dim)', fontSize: 13 }}>Depósito de capital</div>
+                <div className="field-grid">
+                  <label className="field">
+                    <span className="field-label">Monto (ARS)</span>
+                    <input
+                      className="mono"
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(e.target.value)}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">TNA (%)</span>
+                    <input
+                      className="mono"
+                      value={depositTna}
+                      onChange={(e) => setDepositTna(e.target.value)}
+                      placeholder="17,5"
+                    />
+                  </label>
+                </div>
+                <div className="op-total">
+                  Saldo actual: <span>{formatMoney(existingFund?.value ?? 0, 'ARS')}</span>
+                </div>
+                <button className="btn-submit" disabled={!canSubmitDeposit} onClick={submitDeposit}>
+                  Depositar
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="tab-row">
                   <button
-                    type="button"
-                    onClick={() => setMode(mode === 'existing' ? 'new' : 'existing')}
-                    style={{
-                      alignSelf: 'flex-start',
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--accent)',
-                      fontSize: 12,
-                      padding: 0,
-                      marginTop: 2,
-                    }}
+                    className={'tab-pill' + (tab === 'compra' ? ' active' : '')}
+                    onClick={() => setTab('compra')}
                   >
-                    {mode === 'existing' ? '+ Es un activo nuevo' : '← Elegir un activo existente'}
+                    Compra
                   </button>
-                </label>
+                  <button
+                    className={'tab-pill' + (tab === 'venta' ? ' active' : '')}
+                    onClick={() => setTab('venta')}
+                  >
+                    Venta
+                  </button>
+                </div>
 
-                {mode === 'new' && (
-                  <div className="field-grid">
-                    <label className="field">
-                      <span className="field-label">Categoría</span>
-                      <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)}>
-                        {CATEGORIES.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span className="field-label">Cuenta</span>
-                      <select value={newAccountId} onChange={(e) => setNewAccountId(e.target.value)}>
-                        {accounts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                {tab === 'venta' && (
+                  <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '8px 0' }}>
+                    Próximamente. Por ahora podés registrar compras.
                   </div>
                 )}
 
-                <div className="field-grid">
-                  <label className="field">
-                    <span className="field-label">Cantidad</span>
-                    <input
-                      className="mono"
-                      value={addQty}
-                      onChange={(e) => setAddQty(e.target.value)}
-                      placeholder="0"
-                    />
-                  </label>
-                  <label className="field">
-                    <span className="field-label">
-                      Precio de compra ({priceCurrency})
-                    </span>
-                    <input
-                      className="mono"
-                      value={addPrice}
-                      onChange={(e) => setAddPrice(e.target.value)}
-                      placeholder="0"
-                    />
-                  </label>
-                </div>
+                {tab === 'compra' && (
+                  <>
+                    {accountType === 'broker' && (
+                      <label className="field">
+                        <span className="field-label">Categoría</span>
+                        <div className="type-toggle-row">
+                          <button
+                            type="button"
+                            className={'type-toggle-btn' + (brokerCategory === 'Acción' ? ' active' : '')}
+                            onClick={() => {
+                              setBrokerCategory('Acción');
+                              setTicker('');
+                            }}
+                          >
+                            Acción
+                          </button>
+                          <button
+                            type="button"
+                            className={'type-toggle-btn' + (brokerCategory === 'CEDEAR' ? ' active' : '')}
+                            onClick={() => {
+                              setBrokerCategory('CEDEAR');
+                              setTicker('');
+                            }}
+                          >
+                            CEDEAR
+                          </button>
+                        </div>
+                      </label>
+                    )}
 
-                <div className="field-grid">
-                  <label className="field">
-                    <span className="field-label">Fecha</span>
-                    <input className="mono" value={todayDDMMYYYY()} readOnly />
-                  </label>
-                  <label className="field">
-                    <span className="field-label">Comisión (opcional)</span>
-                    <input className="mono" placeholder="$0" />
-                  </label>
-                </div>
+                    {(accountType === 'broker' || accountType === 'exchange') && (
+                      <label className="field">
+                        <span className="field-label">Activo</span>
+                        <TickerPicker
+                          options={accountType === 'exchange' ? CRYPTO_CATALOG : stockOptions}
+                          value={ticker}
+                          onChange={setTicker}
+                          priceCurrency="ARS"
+                          placeholder={
+                            accountType === 'exchange' ? 'Buscar cripto (BTC, ETH...)' : 'Buscar ticker'
+                          }
+                        />
+                        {existingAsset && (
+                          <span className="have-qty" style={{ marginLeft: 0 }}>
+                            ya tenés {formatQty(existingAsset.qty)}
+                          </span>
+                        )}
+                      </label>
+                    )}
 
-                <div className="op-total">
-                  Total operación: <span>{formatMoney(opTotal, priceCurrency)}</span>
-                </div>
+                    {accountType === 'efectivo' && (
+                      <label className="field">
+                        <span className="field-label">Moneda</span>
+                        <div className="type-toggle-row">
+                          {EFECTIVO_OPTIONS.map((o) => (
+                            <button
+                              key={o.ticker}
+                              type="button"
+                              className={'type-toggle-btn' + (efectivoCurrency === o.ticker ? ' active' : '')}
+                              onClick={() => setEfectivoCurrency(o.ticker)}
+                            >
+                              {o.name}
+                            </button>
+                          ))}
+                        </div>
+                      </label>
+                    )}
 
-                <button className="btn-submit" disabled={!canSubmit} onClick={submit}>
-                  Registrar compra
-                </button>
+                    {isEfectivo ? (
+                      <div className={efectivoCurrency === 'USD' ? 'field-grid' : ''}>
+                        <label className="field">
+                          <span className="field-label">Monto ({efectivoCurrency})</span>
+                          <input
+                            className="mono"
+                            value={addQty}
+                            onChange={(e) => setAddQty(e.target.value)}
+                            placeholder="0"
+                          />
+                        </label>
+                        {efectivoCurrency === 'USD' && (
+                          <label className="field">
+                            <span className="field-label">Cotización blue (ARS)</span>
+                            <input
+                              className="mono"
+                              value={efectivoPrice > 0 ? formatMoney(efectivoPrice, 'ARS') : 'Cargando…'}
+                              readOnly
+                            />
+                          </label>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="field-grid">
+                        <label className="field">
+                          <span className="field-label">Cantidad</span>
+                          <input
+                            className="mono"
+                            value={addQty}
+                            onChange={(e) => setAddQty(e.target.value)}
+                            placeholder="0"
+                          />
+                        </label>
+                        <label className="field">
+                          <span className="field-label">Precio de compra ({priceCurrency})</span>
+                          <input
+                            className="mono"
+                            value={addPrice}
+                            onChange={(e) => setAddPrice(e.target.value)}
+                            placeholder="0"
+                          />
+                        </label>
+                      </div>
+                    )}
+
+                    <div className="field-grid">
+                      <label className="field">
+                        <span className="field-label">Fecha</span>
+                        <input className="mono" value={todayDDMMYYYY()} readOnly />
+                      </label>
+                      <label className="field">
+                        <span className="field-label">Comisión (opcional)</span>
+                        <input className="mono" placeholder="$0" />
+                      </label>
+                    </div>
+
+                    <div className="op-total">
+                      Total operación: <span>{formatMoney(opTotal, priceCurrency)}</span>
+                    </div>
+
+                    <button className="btn-submit" disabled={!canSubmit} onClick={submit}>
+                      Registrar compra
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>
 
           {/* summary */}
           <div className="asset-panel-summary">
-            <div className="summary-eyebrow">
-              Posición resultante en {mode === 'existing' ? asset?.ticker ?? '—' : newTicker.toUpperCase() || '—'}
-            </div>
-            <div className="ppc-card">
-              <div className="ppc-label">Precio promedio de compra (PPC)</div>
-              <div className="ppc-value">{formatMoney(calc.newAvgPrice, priceCurrency)}</div>
-              <div className="ppc-before">
-                {mode === 'existing' && asset
-                  ? `antes: ${formatMoney(asset.avgPrice, priceCurrency)} · ${formatQty(asset.qty)} nominales`
-                  : 'activo nuevo'}
-              </div>
-            </div>
-            <div className="mini-grid">
-              <div className="mini-card">
-                <div className="mini-label">Cantidad total</div>
-                <div className="mini-value">{formatQty(calc.newQty)} nominales</div>
-              </div>
-              <div className="mini-card">
-                <div className="mini-label">Capital invertido</div>
-                <div className="mini-value">{formatMoney(calc.newInvested, priceCurrency)}</div>
-              </div>
-            </div>
-            <div className="gp-card">
-              <div className="gp-head">
-                <span>
-                  G/P al precio actual
-                  {mode === 'existing' && asset ? ` (${formatMoney(asset.currentPrice, priceCurrency)})` : ''}
-                </span>
-              </div>
-              <div className={'gp-value ' + (gp >= 0 ? 'positive' : 'negative')}>
-                {(gp >= 0 ? '+' : '−') + formatMoney(Math.abs(gp), priceCurrency)}
-                {calc.newInvested > 0
-                  ? ` (${gp >= 0 ? '+' : '−'}${Math.abs(gpPct).toFixed(1).replace('.', ',')}%)`
-                  : ''}
-              </div>
-            </div>
-            {mode === 'existing' && asset && asset.history.length > 0 && (
-              <div className="history-box">
-                Historial de compras
-                <br />
-                <span className="history-lines">
-                  {asset.history.map((h, i) => (
-                    <span key={i}>
-                      {h.date} · {formatQty(h.qty)} × {formatMoney(h.price, priceCurrency)}
-                      {i < asset.history.length - 1 ? <br /> : null}
+            {isBilletera ? (
+              <>
+                <div className="summary-eyebrow">Posición resultante</div>
+                <div className="ppc-card">
+                  <div className="ppc-label">Saldo nuevo</div>
+                  <div className="ppc-value">
+                    {formatMoney((existingFund?.value ?? 0) + depositAmountNum, 'ARS')}
+                  </div>
+                  <div className="ppc-before">TNA: {depositTna || '0'}%</div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="summary-eyebrow">
+                  Posición resultante en {selectedTicker || '—'}
+                </div>
+                <div className="ppc-card">
+                  <div className="ppc-label">Precio promedio de compra (PPC)</div>
+                  <div className="ppc-value">{formatMoney(calc.newAvgPrice, priceCurrency)}</div>
+                  <div className="ppc-before">
+                    {existingAsset
+                      ? `antes: ${formatMoney(existingAsset.avgPrice, priceCurrency)} · ${formatQty(existingAsset.qty)} nominales`
+                      : 'activo nuevo'}
+                  </div>
+                </div>
+                <div className="mini-grid">
+                  <div className="mini-card">
+                    <div className="mini-label">Cantidad total</div>
+                    <div className="mini-value">{formatQty(calc.newQty)} nominales</div>
+                  </div>
+                  <div className="mini-card">
+                    <div className="mini-label">Capital invertido</div>
+                    <div className="mini-value">{formatMoney(calc.newInvested, priceCurrency)}</div>
+                  </div>
+                </div>
+                <div className="gp-card">
+                  <div className="gp-head">
+                    <span>
+                      G/P al precio actual
+                      {existingAsset ? ` (${formatMoney(existingAsset.currentPrice, priceCurrency)})` : ''}
                     </span>
-                  ))}
-                </span>
-              </div>
+                  </div>
+                  <div className={'gp-value ' + (gp >= 0 ? 'positive' : 'negative')}>
+                    {(gp >= 0 ? '+' : '−') + formatMoney(Math.abs(gp), priceCurrency)}
+                    {calc.newInvested > 0
+                      ? ` (${gp >= 0 ? '+' : '−'}${Math.abs(gpPct).toFixed(1).replace('.', ',')}%)`
+                      : ''}
+                  </div>
+                </div>
+                {existingAsset && existingAsset.history.length > 0 && (
+                  <div className="history-box">
+                    Historial de compras
+                    <br />
+                    <span className="history-lines">
+                      {existingAsset.history.map((h, i) => (
+                        <span key={i}>
+                          {h.date} · {formatQty(h.qty)} × {formatMoney(h.price, priceCurrency)}
+                          {i < existingAsset.history.length - 1 ? <br /> : null}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

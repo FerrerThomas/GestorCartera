@@ -6,24 +6,26 @@ import KpiCards from './components/KpiCards.jsx';
 import AssetsTable from './components/AssetsTable.jsx';
 import AddAccountModal from './components/AddAccountModal.jsx';
 import AddAssetPanel from './components/AddAssetPanel.jsx';
+import AssetDetailModal from './components/AssetDetailModal.jsx';
 import { useAuth } from './context/AuthContext.jsx';
 import { usePortfolio } from './hooks/usePortfolio.js';
+import { useMarketData } from './hooks/useMarketData.js';
 import { assetValueARS, assetInvestedARS, assetGainPct, USD_ARS } from './utils/finance.js';
-
-const LIVE_MARKET_CATEGORIES = ['Acción', 'CEDEAR', 'Cripto'];
 
 export default function App() {
   const { user, signOut } = useAuth();
-  const { accounts, assets, setAssets, loading, error, createAccount, addAsset } =
-    usePortfolio(user);
+  const { accounts, assets, loading, error, createAccount, addAsset } = usePortfolio(user);
+  const { dolarBlue, prices } = useMarketData(assets);
   const [currency, setCurrency] = useState('ARS');
   const [hora, setHora] = useState('');
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAddAsset, setShowAddAsset] = useState(false);
+  const [addAssetAccountId, setAddAssetAccountId] = useState(null);
+  const [selectedAssetId, setSelectedAssetId] = useState(null);
   const [actionError, setActionError] = useState('');
 
   useEffect(() => {
-    const tick = () => {
+    const tick = () =>
       setHora(
         new Date().toLocaleTimeString('es-AR', {
           hour: '2-digit',
@@ -31,50 +33,63 @@ export default function App() {
           second: '2-digit',
         })
       );
-      setAssets((prev) =>
-        prev.map((a) =>
-          LIVE_MARKET_CATEGORIES.includes(a.category)
-            ? { ...a, currentPrice: Math.max(0, a.currentPrice * (1 + (Math.random() - 0.48) * 0.0015)) }
-            : a
-        )
-      );
-    };
     tick();
-    const id = setInterval(tick, 2000);
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [setAssets]);
+  }, []);
 
-  const totalARS = useMemo(() => assets.reduce((sum, a) => sum + assetValueARS(a), 0), [assets]);
+  const usdArs = dolarBlue ?? USD_ARS;
+
+  // Layers live-fetched prices over the DB-sourced assets for display only —
+  // usePortfolio's own `assets` stays the raw persisted shape.
+  const displayAssets = useMemo(
+    () =>
+      assets.map((a) => {
+        if (a.kind === 'fund') return a;
+        if (a.category === 'Efectivo') return dolarBlue != null ? { ...a, currentPrice: dolarBlue } : a;
+        const live = prices[a.ticker];
+        return live != null ? { ...a, currentPrice: live } : a;
+      }),
+    [assets, prices, dolarBlue]
+  );
+
+  const totalARS = useMemo(
+    () => displayAssets.reduce((sum, a) => sum + assetValueARS(a, usdArs), 0),
+    [displayAssets, usdArs]
+  );
   const investedARS = useMemo(
-    () => assets.reduce((sum, a) => sum + assetInvestedARS(a), 0),
-    [assets]
+    () => displayAssets.reduce((sum, a) => sum + assetInvestedARS(a, usdArs), 0),
+    [displayAssets, usdArs]
   );
   const liquidityARS = useMemo(
     () =>
-      assets.reduce(
-        (sum, a) => sum + (a.kind === 'fund' || a.category === 'Efectivo' ? assetValueARS(a) : 0),
+      displayAssets.reduce(
+        (sum, a) =>
+          sum + (a.kind === 'fund' || a.category === 'Efectivo' ? assetValueARS(a, usdArs) : 0),
         0
       ),
-    [assets]
+    [displayAssets, usdArs]
   );
 
   const bestAsset = useMemo(() => {
-    const priced = assets.filter((a) => a.kind !== 'fund');
+    const priced = displayAssets.filter((a) => a.kind !== 'fund');
     if (!priced.length) return null;
-    const best = priced.reduce((b, a) => (assetGainPct(a) > assetGainPct(b) ? a : b));
-    return { ticker: best.ticker, pct: assetGainPct(best) };
-  }, [assets]);
+    const best = priced.reduce((b, a) =>
+      assetGainPct(a, usdArs) > assetGainPct(b, usdArs) ? a : b
+    );
+    return { ticker: best.ticker, pct: assetGainPct(best, usdArs) };
+  }, [displayAssets, usdArs]);
 
   const accountBalances = useMemo(() => {
     const map = {};
     for (const acc of accounts) map[acc.id] = 0;
-    for (const a of assets) {
-      map[a.accountId] = (map[a.accountId] ?? 0) + assetValueARS(a);
+    for (const a of displayAssets) {
+      map[a.accountId] = (map[a.accountId] ?? 0) + assetValueARS(a, usdArs);
     }
     return map;
-  }, [accounts, assets]);
+  }, [accounts, displayAssets, usdArs]);
 
-  const conv = (v) => (currency === 'USD' ? v / USD_ARS : v);
+  const conv = (v) => (currency === 'USD' ? v / usdArs : v);
 
   const handleCreateAccount = async (data) => {
     try {
@@ -91,6 +106,7 @@ export default function App() {
       setActionError('');
       await addAsset(payload);
       setShowAddAsset(false);
+      setAddAssetAccountId(null);
     } catch (e) {
       setActionError(e.message);
     }
@@ -109,7 +125,13 @@ export default function App() {
       <Sidebar
         accounts={accounts}
         accountBalances={accountBalances}
+        currency={currency}
+        usdArs={usdArs}
         onConnectAccount={() => setShowAddAccount(true)}
+        onAddAssetToAccount={(accountId) => {
+          setAddAssetAccountId(accountId);
+          setShowAddAsset(true);
+        }}
         onSignOut={signOut}
         userEmail={user.email}
       />
@@ -131,21 +153,40 @@ export default function App() {
           <div style={{ color: 'var(--negative)', fontSize: 12.5 }}>{error || actionError}</div>
         )}
         <AssetsTable
-          assets={assets}
+          assets={displayAssets}
           accounts={accounts}
           currency={currency}
+          usdArs={usdArs}
           onAddAsset={() => setShowAddAsset(true)}
+          onSelectAsset={(asset) => setSelectedAssetId(asset.id)}
         />
       </main>
 
       {showAddAccount && (
         <AddAccountModal onClose={() => setShowAddAccount(false)} onCreate={handleCreateAccount} />
       )}
+      {selectedAssetId &&
+        (() => {
+          const selected = displayAssets.find((a) => a.id === selectedAssetId);
+          return selected ? (
+            <AssetDetailModal
+              asset={selected}
+              accounts={accounts}
+              currency={currency}
+              usdArs={usdArs}
+              onClose={() => setSelectedAssetId(null)}
+            />
+          ) : null;
+        })()}
       {showAddAsset && (
         <AddAssetPanel
-          assets={assets}
+          assets={displayAssets}
           accounts={accounts}
-          onClose={() => setShowAddAsset(false)}
+          initialAccountId={addAssetAccountId}
+          onClose={() => {
+            setShowAddAsset(false);
+            setAddAssetAccountId(null);
+          }}
           onSubmit={handleAddAssetSubmit}
         />
       )}

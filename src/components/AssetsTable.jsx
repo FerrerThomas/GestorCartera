@@ -1,16 +1,17 @@
+import AssetIcon from './AssetIcon.jsx';
 import {
   assetValueARS,
   assetGainARS,
   assetGainPct,
+  convertAmount,
   formatMoney,
   formatQty,
   formatPct,
-  USD_ARS,
 } from '../utils/finance.js';
 
-export default function AssetsTable({ assets, accounts, currency, onAddAsset }) {
+export default function AssetsTable({ assets, accounts, currency, usdArs, onAddAsset, onSelectAsset }) {
   const accountName = (id) => accounts.find((a) => a.id === id)?.name ?? '';
-  const conv = (v) => (currency === 'USD' ? v / USD_ARS : v);
+  const conv = (v) => (currency === 'USD' ? v / usdArs : v);
 
   return (
     <div className="table-card">
@@ -38,20 +39,21 @@ export default function AssetsTable({ assets, accounts, currency, onAddAsset }) 
 
       {assets.map((asset) => {
         const isFund = asset.kind === 'fund';
-        const valueARS = assetValueARS(asset);
-        const gainARS = assetGainARS(asset);
-        const pct = assetGainPct(asset);
-        const priceCurrency = asset.currency === 'USD' ? 'USD' : 'ARS';
+        const valueARS = assetValueARS(asset, usdArs);
+        const gainARS = assetGainARS(asset, usdArs);
+        const pct = assetGainPct(asset, usdArs);
+        const gainDisplay = conv(gainARS);
+        const assetPriceCurrency = asset.currency === 'USD' ? 'USD' : 'ARS';
 
         return (
-          <div className="grid-row" key={asset.id}>
+          <div
+            className="grid-row clickable"
+            key={asset.id}
+            onClick={() => onSelectAsset?.(asset)}
+            title={`Ver movimientos de ${asset.ticker}`}
+          >
             <div className="asset-name-cell">
-              <span
-                className="asset-icon"
-                style={{ background: asset.iconBg, color: asset.iconColor }}
-              >
-                {asset.iconLabel}
-              </span>
+              <AssetIcon asset={asset} accountName={accountName(asset.accountId)} />
               <span style={{ minWidth: 0 }}>
                 <span className="asset-ticker">{asset.ticker}</span>
                 <span className="asset-sub">
@@ -61,16 +63,21 @@ export default function AssetsTable({ assets, accounts, currency, onAddAsset }) 
             </div>
             <div className="text-right">{isFund ? '—' : formatQty(asset.qty)}</div>
             <div className="text-right dim">
-              {isFund ? '—' : formatMoney(asset.avgPrice, priceCurrency)}
+              {isFund
+                ? '—'
+                : formatMoney(convertAmount(asset.avgPrice, assetPriceCurrency, currency, usdArs), currency)}
             </div>
             <div className="text-right">
-              {isFund ? `${asset.tna}% TNA` : formatMoney(asset.currentPrice, priceCurrency)}
+              {isFund
+                ? `${asset.tna}% TNA`
+                : formatMoney(convertAmount(asset.currentPrice, assetPriceCurrency, currency, usdArs), currency)}
             </div>
             <div className="text-right">{formatMoney(conv(valueARS), currency)}</div>
             <div className={'text-right ' + (gainARS >= 0 ? 'positive' : 'negative')}>
-              {isFund
-                ? (gainARS >= 0 ? '+' : '−') + formatMoney(conv(Math.abs(gainARS)), currency)
-                : formatPct(pct)}
+              <div>{formatPct(pct)}</div>
+              <div style={{ fontSize: 11, opacity: 0.85 }}>
+                {(gainDisplay >= 0 ? '+' : '−') + formatMoney(Math.abs(gainDisplay), currency)}
+              </div>
             </div>
           </div>
         );
