@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { getAssetIcon } from '../utils/assetIcon.js';
-import { calcAveragePrice, formatDateDDMMYYYY } from '../utils/finance.js';
+import { calcAveragePrice, formatDateDDMMYYYY, formatMoney } from '../utils/finance.js';
+
+// Best-effort audit trail insert — a logging failure must never block the
+// action it's describing. No FK to accounts/assets on purpose: the trail
+// has to survive deleting the thing it refers to.
+async function logEvent(userId, action, description) {
+  try {
+    await supabase.from('audit_log').insert({ user_id: userId, action, description });
+  } catch {
+    // ignore
+  }
+}
 
 // Calendar days elapsed since a date ("YYYY-MM-DD" or timestamptz), never negative.
 function daysSince(dateInput) {
@@ -123,14 +134,45 @@ export function usePortfolio(user) {
         .single();
       if (err) throw err;
       setAccounts((prev) => [...prev, row]);
+      logEvent(user.id, 'account_created', `Cuenta creada: ${data.name}`);
       return row;
     },
     [user]
   );
 
+  const deleteAccount = useCallback(
+    async (accountId) => {
+      const account = accounts.find((a) => a.id === accountId);
+      const assetCount = assets.filter((a) => a.accountId === accountId).length;
+      const { error: err } = await supabase.from('accounts').delete().eq('id', accountId);
+      if (err) throw err;
+      await reload();
+      logEvent(
+        user.id,
+        'account_deleted',
+        `Cuenta eliminada: ${account?.name ?? accountId} (${assetCount} activo${assetCount === 1 ? '' : 's'})`
+      );
+    },
+    [user, accounts, assets, reload]
+  );
+
+  const deleteAsset = useCallback(
+    async (assetId) => {
+      const asset = assets.find((a) => a.id === assetId);
+      const { error: err } = await supabase.from('assets').delete().eq('id', assetId);
+      if (err) throw err;
+      await reload();
+      logEvent(user.id, 'asset_deleted', `Activo eliminado: ${asset?.ticker ?? assetId}`);
+    },
+    [user, assets, reload]
+  );
+
   const addAsset = useCallback(
     async (payload) => {
+      const accountName = (id) => accounts.find((a) => a.id === id)?.name ?? id;
+
       if (payload.type === 'fund_topup') {
+        const isNewFund = !payload.existingAssetId;
         let fundAssetId = payload.existingAssetId;
         if (fundAssetId) {
           // Read the current value fresh from the DB rather than relying on
@@ -178,6 +220,11 @@ export function usePortfolio(user) {
           price: 1,
         });
         if (histErr) throw histErr;
+        logEvent(
+          user.id,
+          isNewFund ? 'fund_created' : 'fund_deposit',
+          `${isNewFund ? 'Billetera activada' : 'Depósito'} en ${accountName(payload.accountId)}: ${formatMoney(payload.amount, 'ARS')}`
+        );
       } else if (payload.type === 'existing') {
         const { error: err } = await supabase.from('asset_history').insert({
           asset_id: payload.assetId,
@@ -186,6 +233,12 @@ export function usePortfolio(user) {
           price: payload.price,
         });
         if (err) throw err;
+        const existingAsset = assets.find((a) => a.id === payload.assetId);
+        logEvent(
+          user.id,
+          'asset_bought',
+          `Compra: ${payload.qty} ${existingAsset?.ticker ?? payload.assetId} a ${formatMoney(payload.price, existingAsset?.currency === 'USD' ? 'USD' : 'ARS')}`
+        );
       } else {
         const { data: assetRow, error: assetErr } = await supabase
           .from('assets')
@@ -209,11 +262,26 @@ export function usePortfolio(user) {
           price: payload.price,
         });
         if (histErr) throw histErr;
+        logEvent(
+          user.id,
+          'asset_created',
+          `Activo agregado: ${payload.asset.ticker} en ${accountName(payload.asset.accountId)} — ${payload.qty} a ${formatMoney(payload.price, payload.asset.currency === 'USD' ? 'USD' : 'ARS')}`
+        );
       }
       await reload();
     },
-    [user, reload]
+    [user, accounts, assets, reload]
   );
 
-  return { accounts, assets, setAssets, loading, error, createAccount, addAsset };
+  return {
+    accounts,
+    assets,
+    setAssets,
+    loading,
+    error,
+    createAccount,
+    deleteAccount,
+    addAsset,
+    deleteAsset,
+  };
 }

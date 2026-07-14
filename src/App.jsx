@@ -7,19 +7,24 @@ import AssetsTable from './components/AssetsTable.jsx';
 import AddAccountModal from './components/AddAccountModal.jsx';
 import AddAssetPanel from './components/AddAssetPanel.jsx';
 import AssetDetailModal from './components/AssetDetailModal.jsx';
+import AuditLogModal from './components/AuditLogModal.jsx';
+import PortfolioChart from './components/PortfolioChart.jsx';
 import { useAuth } from './context/AuthContext.jsx';
 import { usePortfolio } from './hooks/usePortfolio.js';
 import { useMarketData } from './hooks/useMarketData.js';
+import { usePortfolioHistory } from './hooks/usePortfolioHistory.js';
 import { assetValueARS, assetInvestedARS, assetGainPct, USD_ARS } from './utils/finance.js';
 
 export default function App() {
   const { user, signOut } = useAuth();
-  const { accounts, assets, loading, error, createAccount, addAsset } = usePortfolio(user);
+  const { accounts, assets, loading, error, createAccount, deleteAccount, addAsset, deleteAsset } =
+    usePortfolio(user);
   const { dolarBlue, prices } = useMarketData(assets);
   const [currency, setCurrency] = useState('ARS');
   const [hora, setHora] = useState('');
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAddAsset, setShowAddAsset] = useState(false);
+  const [showAuditLog, setShowAuditLog] = useState(false);
   const [addAssetAccountId, setAddAssetAccountId] = useState(null);
   const [selectedAssetId, setSelectedAssetId] = useState(null);
   const [actionError, setActionError] = useState('');
@@ -91,6 +96,8 @@ export default function App() {
 
   const conv = (v) => (currency === 'USD' ? v / usdArs : v);
 
+  const portfolioHistory = usePortfolioHistory(user, totalARS, totalARS / usdArs, !loading);
+
   const handleCreateAccount = async (data) => {
     try {
       setActionError('');
@@ -112,6 +119,25 @@ export default function App() {
     }
   };
 
+  const handleDeleteAccount = async (accountId) => {
+    try {
+      setActionError('');
+      await deleteAccount(accountId);
+    } catch (e) {
+      setActionError(e.message);
+    }
+  };
+
+  const handleDeleteAsset = async (assetId) => {
+    try {
+      setActionError('');
+      await deleteAsset(assetId);
+      setSelectedAssetId(null);
+    } catch (e) {
+      setActionError(e.message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="auth-shell">
@@ -124,6 +150,7 @@ export default function App() {
     <div className="app">
       <Sidebar
         accounts={accounts}
+        assets={assets}
         accountBalances={accountBalances}
         currency={currency}
         usdArs={usdArs}
@@ -132,6 +159,8 @@ export default function App() {
           setAddAssetAccountId(accountId);
           setShowAddAsset(true);
         }}
+        onDeleteAccount={handleDeleteAccount}
+        onOpenAuditLog={() => setShowAuditLog(true)}
         onSignOut={signOut}
         userEmail={user.email}
       />
@@ -142,6 +171,7 @@ export default function App() {
           hora={hora || '—:—:—'}
           currency={currency}
           onSetCurrency={setCurrency}
+          dolarBlue={dolarBlue}
         />
         <KpiCards
           invested={conv(investedARS)}
@@ -160,6 +190,7 @@ export default function App() {
           onAddAsset={() => setShowAddAsset(true)}
           onSelectAsset={(asset) => setSelectedAssetId(asset.id)}
         />
+        <PortfolioChart history={portfolioHistory} currency={currency} />
       </main>
 
       {showAddAccount && (
@@ -175,9 +206,11 @@ export default function App() {
               currency={currency}
               usdArs={usdArs}
               onClose={() => setSelectedAssetId(null)}
+              onDelete={handleDeleteAsset}
             />
           ) : null;
         })()}
+      {showAuditLog && <AuditLogModal onClose={() => setShowAuditLog(false)} />}
       {showAddAsset && (
         <AddAssetPanel
           assets={displayAssets}
