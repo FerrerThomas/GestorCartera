@@ -9,7 +9,7 @@ import {
   formatQty,
 } from '../utils/finance.js';
 
-export default function AssetDetailModal({ asset, accounts, currency, usdArs, onClose }) {
+export default function AssetDetailModal({ asset, accounts, currency, usdArs, onClose, onDelete }) {
   const account = accounts.find((a) => a.id === asset.accountId);
   const isFund = asset.kind === 'fund';
   const assetCurrency = asset.currency === 'USD' ? 'USD' : 'ARS';
@@ -112,6 +112,18 @@ export default function AssetDetailModal({ asset, accounts, currency, usdArs, on
               </div>
             )}
           </div>
+
+          <button
+            className="btn-danger"
+            style={{ alignSelf: 'flex-start' }}
+            onClick={() => {
+              if (window.confirm(`¿Eliminar ${asset.ticker}? Esto también borra su historial.`)) {
+                onDelete(asset.id);
+              }
+            }}
+          >
+            Eliminar activo
+          </button>
         </div>
       </div>
     </div>

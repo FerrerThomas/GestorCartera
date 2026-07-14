@@ -149,6 +149,96 @@
   flex: none;
 }
 
+.account-delete-btn {
+  flex: none;
+  margin-left: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.account-row:hover .account-delete-btn {
+  opacity: 1;
+}
+
+.account-delete-btn:hover {
+  background: rgba(240, 112, 95, 0.15);
+  color: var(--negative);
+}
+
+.btn-danger {
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 112, 95, 0.4);
+  background: none;
+  color: var(--negative);
+  font: 600 13px Archivo, sans-serif;
+  cursor: pointer;
+}
+
+.btn-danger:hover {
+  background: rgba(240, 112, 95, 0.1);
+}
+
+.audit-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.audit-row:last-child {
+  border-bottom: none;
+}
+
+.audit-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex: none;
+}
+
+.audit-desc {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.audit-date {
+  font: 500 11px 'IBM Plex Mono', monospace;
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+
+.chart-card {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.chart-change {
+  font: 600 12.5px 'IBM Plex Mono', monospace;
+}
+
+.chart-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 18px 16px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 .btn-dashed {
   margin-top: 2px;
   padding: 9px 12px;

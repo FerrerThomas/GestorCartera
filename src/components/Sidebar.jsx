@@ -3,14 +3,26 @@ import { convertAmount, formatMoney } from '../utils/finance.js';
 
 export default function Sidebar({
   accounts,
+  assets,
   accountBalances,
   currency,
   usdArs,
   onConnectAccount,
   onAddAssetToAccount,
+  onDeleteAccount,
+  onOpenAuditLog,
   onSignOut,
   userEmail,
 }) {
+  const handleDelete = (e, acc) => {
+    e.stopPropagation();
+    const count = assets.filter((a) => a.accountId === acc.id).length;
+    const suffix = count === 0 ? '' : ` Esto también borra sus ${count} activo${count === 1 ? '' : 's'}.`;
+    if (window.confirm(`¿Eliminar "${acc.name}"?${suffix}`)) {
+      onDeleteAccount(acc.id);
+    }
+  };
+
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -21,7 +33,9 @@ export default function Sidebar({
       <nav className="nav">
         <button className="nav-item active">Resumen</button>
         <button className="nav-item">Activos</button>
-        <button className="nav-item">Movimientos</button>
+        <button className="nav-item" onClick={onOpenAuditLog}>
+          Movimientos
+        </button>
         <button className="nav-item">Análisis</button>
       </nav>
 
@@ -34,21 +48,12 @@ export default function Sidebar({
         ) : (
           <div className="accounts-list">
             {accounts.map((acc) => (
-              <button
-                type="button"
+              <div
                 className="account-row"
                 key={acc.id}
                 onClick={() => onAddAssetToAccount(acc.id)}
                 title={`Agregar activo a ${acc.name}`}
-                style={{
-                  width: '100%',
-                  background: 'none',
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer',
-                  font: 'inherit',
-                  color: 'inherit',
-                  textAlign: 'left',
-                }}
+                style={{ cursor: 'pointer' }}
               >
                 <div className="account-row-left">
                   <span
@@ -63,7 +68,15 @@ export default function Sidebar({
                     currency
                   )}
                 </span>
-              </button>
+                <button
+                  type="button"
+                  className="account-delete-btn"
+                  onClick={(e) => handleDelete(e, acc)}
+                  title={`Eliminar ${acc.name}`}
+                >
+                  🗑
+                </button>
+              </div>
             ))}
           </div>
         )}
