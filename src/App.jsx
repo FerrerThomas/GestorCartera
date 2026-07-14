@@ -51,7 +51,9 @@ export default function App() {
     () =>
       assets.map((a) => {
         if (a.kind === 'fund') return a;
-        if (a.category === 'Efectivo') return dolarBlue != null ? { ...a, currentPrice: dolarBlue } : a;
+        // Solo el dólar billete sigue la cotización blue; los pesos valen siempre 1.
+        if (a.category === 'Efectivo')
+          return a.ticker === 'USD' && dolarBlue != null ? { ...a, currentPrice: dolarBlue } : a;
         const live = prices[a.ticker];
         return live != null ? { ...a, currentPrice: live } : a;
       }),
