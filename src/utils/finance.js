@@ -1,3 +1,6 @@
+// Fallback USD/ARS rate used only before the first live dolarBlue fetch resolves,
+// or if the API is unreachable. The live rate (from useMarketData) is passed in
+// explicitly to every function below.
 export const USD_ARS = 1180;
 
 export function parseLocaleNumber(raw) {
@@ -22,6 +25,14 @@ export function formatMoney(value, currency) {
   return currency === 'USD' ? formatUSD(value) : formatARS(value);
 }
 
+// Converts an amount denominated in `fromCurrency` into `toCurrency`.
+export function convertAmount(value, fromCurrency, toCurrency, usdArs = USD_ARS) {
+  const from = fromCurrency === 'USD' ? 'USD' : 'ARS';
+  const to = toCurrency === 'USD' ? 'USD' : 'ARS';
+  if (from === to) return value;
+  return from === 'USD' ? value * usdArs : value / usdArs;
+}
+
 export function formatQty(qty) {
   return qty.toLocaleString('es-AR', { maximumFractionDigits: 3 });
 }
@@ -33,29 +44,29 @@ export function formatPct(pct, withSign = true) {
 }
 
 // Value of one asset's position expressed in ARS.
-export function assetValueARS(asset) {
+export function assetValueARS(asset, usdArs = USD_ARS) {
   if (asset.kind === 'fund') return asset.value;
   const price = asset.currentPrice ?? 0;
   const qty = asset.qty ?? 0;
-  return asset.currency === 'USD' ? qty * price * USD_ARS : qty * price;
+  return asset.currency === 'USD' ? qty * price * usdArs : qty * price;
 }
 
-export function assetInvestedARS(asset) {
+export function assetInvestedARS(asset, usdArs = USD_ARS) {
   if (asset.kind === 'fund') return asset.value - (asset.gainAbs ?? 0);
   const price = asset.avgPrice ?? 0;
   const qty = asset.qty ?? 0;
-  return asset.currency === 'USD' ? qty * price * USD_ARS : qty * price;
+  return asset.currency === 'USD' ? qty * price * usdArs : qty * price;
 }
 
-export function assetGainARS(asset) {
+export function assetGainARS(asset, usdArs = USD_ARS) {
   if (asset.kind === 'fund') return asset.gainAbs ?? 0;
-  return assetValueARS(asset) - assetInvestedARS(asset);
+  return assetValueARS(asset, usdArs) - assetInvestedARS(asset, usdArs);
 }
 
-export function assetGainPct(asset) {
-  const invested = assetInvestedARS(asset);
+export function assetGainPct(asset, usdArs = USD_ARS) {
+  const invested = assetInvestedARS(asset, usdArs);
   if (!invested) return 0;
-  return (assetGainARS(asset) / invested) * 100;
+  return (assetGainARS(asset, usdArs) / invested) * 100;
 }
 
 // Weighted-average purchase price after adding a new buy.

@@ -1,0 +1,23 @@
+// Curated popular tickers for the crypto ticker picker (not Binance's full catalog).
+export const CRYPTO_CATALOG = [
+  { ticker: 'BTC', name: 'Bitcoin' },
+  { ticker: 'ETH', name: 'Ethereum' },
+  { ticker: 'USDT', name: 'Tether' },
+  { ticker: 'BNB', name: 'BNB' },
+  { ticker: 'SOL', name: 'Solana' },
+  { ticker: 'XRP', name: 'XRP' },
+  { ticker: 'ADA', name: 'Cardano' },
+  { ticker: 'DOGE', name: 'Dogecoin' },
+  { ticker: 'TON', name: 'Toncoin' },
+  { ticker: 'TRX', name: 'TRON' },
+  { ticker: 'AVAX', name: 'Avalanche' },
+  { ticker: 'DOT', name: 'Polkadot' },
+  { ticker: 'MATIC', name: 'Polygon' },
+  { ticker: 'LINK', name: 'Chainlink' },
+  { ticker: 'LTC', name: 'Litecoin' },
+  { ticker: 'SHIB', name: 'Shiba Inu' },
+  { ticker: 'ATOM', name: 'Cosmos' },
+  { ticker: 'UNI', name: 'Uniswap' },
+  { ticker: 'XLM', name: 'Stellar' },
+  { ticker: 'BCH', name: 'Bitcoin Cash' },
+];

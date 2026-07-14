@@ -3,6 +3,33 @@ import { supabase } from '../lib/supabase.js';
 import { getAssetIcon } from '../utils/assetIcon.js';
 import { calcAveragePrice, formatDateDDMMYYYY } from '../utils/finance.js';
 
+// Calendar days elapsed since a date ("YYYY-MM-DD" or timestamptz), never negative.
+function daysSince(dateInput) {
+  let t = null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateInput ?? ''));
+  if (m) t = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  if (t == null) t = new Date(dateInput).getTime();
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.floor((todayUTC - t) / 86400000));
+}
+
+// Daily-compounded interest accrued by a money-market style fund. Each deposit
+// (history row: qty = amount, price = 1) accrues from its own date at the
+// fund's current TNA. Funds created before deposits were recorded in history
+// fall back to accruing the whole principal from the asset's created_at.
+function fundAccruedGain(history, tna, principal, createdAt) {
+  const dailyRate = tna / 100 / 365;
+  if (dailyRate <= 0) return 0;
+  if (history.length > 0) {
+    return history.reduce(
+      (sum, h) => sum + h.qty * (Math.pow(1 + dailyRate, daysSince(h.dateRaw)) - 1),
+      0
+    );
+  }
+  return principal * (Math.pow(1 + dailyRate, daysSince(createdAt)) - 1);
+}
+
 function mapAsset(row) {
   const history = (row.asset_history ?? [])
     .slice()
@@ -13,6 +40,7 @@ function mapAsset(row) {
     )
     .map((h) => ({
       date: formatDateDDMMYYYY(h.occurred_on),
+      dateRaw: h.occurred_on,
       qty: Number(h.qty),
       price: Number(h.price),
     }));
@@ -30,12 +58,15 @@ function mapAsset(row) {
   };
 
   if (row.kind === 'fund') {
+    const tna = Number(row.fund_tna ?? 0);
+    const principal = Number(row.fund_value);
+    const accrued = fundAccruedGain(history, tna, principal, row.created_at);
     return {
       ...base,
       kind: 'fund',
-      value: Number(row.fund_value),
-      gainAbs: Number(row.fund_gain_abs ?? 0),
-      tna: Number(row.fund_tna ?? 0),
+      value: principal + accrued,
+      gainAbs: accrued,
+      tna,
     };
   }
 
@@ -99,7 +130,55 @@ export function usePortfolio(user) {
 
   const addAsset = useCallback(
     async (payload) => {
-      if (payload.type === 'existing') {
+      if (payload.type === 'fund_topup') {
+        let fundAssetId = payload.existingAssetId;
+        if (fundAssetId) {
+          // Read the current value fresh from the DB rather than relying on
+          // possibly-stale client state, so consecutive top-ups always add correctly.
+          const { data: current, error: readErr } = await supabase
+            .from('assets')
+            .select('fund_value')
+            .eq('id', fundAssetId)
+            .single();
+          if (readErr) throw readErr;
+          const { error: err } = await supabase
+            .from('assets')
+            .update({
+              fund_value: Number(current?.fund_value ?? 0) + payload.amount,
+              fund_tna: payload.tna,
+            })
+            .eq('id', fundAssetId);
+          if (err) throw err;
+        } else {
+          const { data: fundRow, error: err } = await supabase
+            .from('assets')
+            .insert({
+              user_id: user.id,
+              account_id: payload.accountId,
+              ticker: 'SALDO',
+              name: 'Saldo',
+              category: 'Fondo money market',
+              currency: 'ARS',
+              kind: 'fund',
+              fund_value: payload.amount,
+              fund_gain_abs: 0,
+              fund_tna: payload.tna,
+            })
+            .select()
+            .single();
+          if (err) throw err;
+          fundAssetId = fundRow.id;
+        }
+        // Record the deposit itself (qty = amount, price = 1) so the fund's
+        // daily accrual and the movements view have real dates to work from.
+        const { error: histErr } = await supabase.from('asset_history').insert({
+          asset_id: fundAssetId,
+          user_id: user.id,
+          qty: payload.amount,
+          price: 1,
+        });
+        if (histErr) throw histErr;
+      } else if (payload.type === 'existing') {
         const { error: err } = await supabase.from('asset_history').insert({
           asset_id: payload.assetId,
           user_id: user.id,
