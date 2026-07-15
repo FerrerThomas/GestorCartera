@@ -64,6 +64,7 @@ function mapAsset(row) {
     category: row.category,
     accountId: row.account_id,
     currency: row.currency,
+    imageUrl: row.image_url ?? null,
     history,
     ...icon,
   };
@@ -253,6 +254,7 @@ export function usePortfolio(user) {
             currency: payload.asset.currency,
             kind: 'position',
             current_price: payload.price,
+            image_url: payload.asset.imageUrl ?? null,
           })
           .select()
           .single();

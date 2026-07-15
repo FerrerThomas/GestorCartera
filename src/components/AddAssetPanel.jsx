@@ -6,8 +6,14 @@ import {
   parseLocaleNumber,
   todayISODate,
 } from '../utils/finance.js';
-import { fetchArgCedearsCatalog, fetchArgStocksCatalog, fetchDolarBlue } from '../services/marketData.js';
+import {
+  fetchArgCedearsCatalog,
+  fetchArgStocksCatalog,
+  fetchCs2Catalog,
+  fetchDolarBlue,
+} from '../services/marketData.js';
 import { CRYPTO_CATALOG } from '../data/cryptoCatalog.js';
+import { findSkinImage } from '../data/cs2images.js';
 import TickerPicker from './TickerPicker.jsx';
 
 const EFECTIVO_OPTIONS = [
@@ -40,7 +46,10 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
 
   const [stocksCatalog, setStocksCatalog] = useState([]);
   const [cedearsCatalog, setCedearsCatalog] = useState([]);
+  const [cs2Catalog, setCs2Catalog] = useState([]);
   const [dolarBlueLive, setDolarBlueLive] = useState(null);
+  const [imageUrl, setImageUrl] = useState('');
+  const [imgBroken, setImgBroken] = useState(false);
 
   // Reset selections whenever the account (and therefore its type) changes.
   useEffect(() => {
@@ -53,6 +62,7 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
     setDepositAmount('');
     setDepositTna(existingFund ? String(existingFund.tna).replace('.', ',') : '17,5');
     setOpDate(todayISODate());
+    setImageUrl('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
 
@@ -63,10 +73,19 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
     if (accountType === 'broker' && brokerCategory === 'CEDEAR' && cedearsCatalog.length === 0) {
       fetchArgCedearsCatalog().then(setCedearsCatalog);
     }
-  }, [accountType, brokerCategory, stocksCatalog.length, cedearsCatalog.length]);
+    if (accountType === 'steam' && cs2Catalog.length === 0) {
+      fetchCs2Catalog().then(setCs2Catalog);
+    }
+  }, [accountType, brokerCategory, stocksCatalog.length, cedearsCatalog.length, cs2Catalog.length]);
 
   const category =
-    accountType === 'exchange' ? 'Cripto' : accountType === 'broker' ? brokerCategory : 'Efectivo';
+    accountType === 'exchange'
+      ? 'Cripto'
+      : accountType === 'broker'
+        ? brokerCategory
+        : accountType === 'steam'
+          ? 'Skin CS2'
+          : 'Efectivo';
   const selectedTicker = accountType === 'efectivo' ? efectivoCurrency : ticker;
   const existingAsset = purchasable.find((a) => a.ticker === selectedTicker);
 
@@ -87,7 +106,7 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
   const efectivoPrice =
     efectivoCurrency === 'ARS' ? 1 : existingAsset?.currentPrice ?? dolarBlueLive ?? 0;
   const p = isEfectivo ? efectivoPrice : parseLocaleNumber(addPrice);
-  const assetCurrency = accountType === 'exchange' ? 'USD' : 'ARS';
+  const assetCurrency = accountType === 'exchange' || accountType === 'steam' ? 'USD' : 'ARS';
   const priceCurrency = existingAsset ? (existingAsset.currency === 'USD' ? 'USD' : 'ARS') : assetCurrency;
 
   const calc = useMemo(() => {
@@ -105,6 +124,24 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
     if (accountType === 'efectivo') return EFECTIVO_OPTIONS.find((c) => c.ticker === t)?.name ?? t;
     return t;
   };
+
+  // Al elegir una skin, buscar su imagen en el dataset (editable después a mano).
+  useEffect(() => {
+    if (accountType !== 'steam' || !ticker) {
+      setImageUrl('');
+      return;
+    }
+    let cancelled = false;
+    findSkinImage(ticker).then((url) => {
+      if (!cancelled) {
+        setImageUrl(url ?? '');
+        setImgBroken(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountType, ticker]);
 
   const dateValid = !!opDate && opDate <= todayISODate();
   const canSubmit = tab === 'compra' && !!selectedTicker && q > 0 && p > 0 && dateValid;
@@ -125,6 +162,7 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
           category,
           accountId,
           currency: assetCurrency,
+          imageUrl: imageUrl.trim() || null,
         },
       });
     }
@@ -275,16 +313,28 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
                       </label>
                     )}
 
-                    {(accountType === 'broker' || accountType === 'exchange') && (
+                    {(accountType === 'broker' || accountType === 'exchange' || accountType === 'steam') && (
                       <label className="field">
-                        <span className="field-label">Activo</span>
+                        <span className="field-label">{accountType === 'steam' ? 'Skin' : 'Activo'}</span>
                         <TickerPicker
-                          options={accountType === 'exchange' ? CRYPTO_CATALOG : stockOptions}
+                          options={
+                            accountType === 'exchange'
+                              ? CRYPTO_CATALOG
+                              : accountType === 'steam'
+                                ? cs2Catalog
+                                : stockOptions
+                          }
                           value={ticker}
                           onChange={setTicker}
-                          priceCurrency="ARS"
+                          priceCurrency={accountType === 'steam' ? 'USD' : 'ARS'}
                           placeholder={
-                            accountType === 'exchange' ? 'Buscar cripto (BTC, ETH...)' : 'Buscar ticker'
+                            accountType === 'exchange'
+                              ? 'Buscar cripto (BTC, ETH...)'
+                              : accountType === 'steam'
+                                ? cs2Catalog.length === 0
+                                  ? 'Cargando catálogo…'
+                                  : 'Buscar skin (AK-47 Redline, AWP...)'
+                                : 'Buscar ticker'
                           }
                         />
                         {existingAsset && (
@@ -292,6 +342,30 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
                             ya tenés {formatQty(existingAsset.qty)}
                           </span>
                         )}
+                      </label>
+                    )}
+
+                    {accountType === 'steam' && ticker && (
+                      <label className="field">
+                        <span className="field-label">URL de imagen (opcional)</span>
+                        <div className="skin-image-row">
+                          {imageUrl && !imgBroken && (
+                            <img
+                              className="skin-image-preview"
+                              src={imageUrl}
+                              alt={ticker}
+                              onError={() => setImgBroken(true)}
+                            />
+                          )}
+                          <input
+                            value={imageUrl}
+                            onChange={(e) => {
+                              setImageUrl(e.target.value);
+                              setImgBroken(false);
+                            }}
+                            placeholder="https://…"
+                          />
+                        </div>
                       </label>
                     )}
 

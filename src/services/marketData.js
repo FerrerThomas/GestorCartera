@@ -51,6 +51,26 @@ export async function fetchArgCedears() {
   return catalogToMap(await fetchArgCedearsCatalog());
 }
 
+// Catálogo de skins CS2 vía nuestro proxy (Vercel function / middleware de Vite).
+// Devuelve [{ticker: market_hash_name, price: min_price, median}].
+export async function fetchCs2Catalog() {
+  const data = await safeFetchJson('/api/cs2prices');
+  const list = [];
+  if (Array.isArray(data)) {
+    for (const row of data) {
+      if (row?.name && row.min != null) list.push({ ticker: row.name, price: row.min, median: row.median });
+    }
+  }
+  return list;
+}
+
+export async function fetchCs2Prices() {
+  const catalog = await fetchCs2Catalog();
+  const map = {};
+  for (const { ticker, price } of catalog) map[ticker] = price;
+  return map;
+}
+
 function parseBinanceRow(row, map) {
   const price = Number(row?.price);
   const ticker = String(row?.symbol ?? '').replace(/USDT$/, '');

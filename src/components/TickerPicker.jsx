@@ -7,7 +7,7 @@ export default function TickerPicker({ options, value, onChange, priceCurrency, 
 
   const filtered = useMemo(() => {
     const q = query.trim().toUpperCase();
-    const list = q ? options.filter((o) => o.ticker.includes(q)) : options;
+    const list = q ? options.filter((o) => o.ticker.toUpperCase().includes(q)) : options;
     return list.slice(0, 50);
   }, [options, query]);
 

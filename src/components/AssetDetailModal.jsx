@@ -30,10 +30,12 @@ export default function AssetDetailModal({ asset, accounts, currency, usdArs, on
             <div>
               <div className="modal-title">
                 {asset.ticker}
-                <span style={{ color: 'var(--text-dim)', fontWeight: 400, fontSize: 14 }}>
-                  {' '}
-                  — {asset.name}
-                </span>
+                {asset.name !== asset.ticker && (
+                  <span style={{ color: 'var(--text-dim)', fontWeight: 400, fontSize: 14 }}>
+                    {' '}
+                    — {asset.name}
+                  </span>
+                )}
               </div>
               <div className="modal-step">{account?.name ?? '—'}</div>
             </div>
@@ -44,6 +46,11 @@ export default function AssetDetailModal({ asset, accounts, currency, usdArs, on
         </div>
 
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {asset.imageUrl && (
+            <div className="detail-image-box">
+              <img src={asset.imageUrl} alt={asset.ticker} />
+            </div>
+          )}
           <div className="mini-grid">
             <div className="mini-card">
               <div className="mini-label">{isFund ? 'Saldo' : 'Cantidad'}</div>

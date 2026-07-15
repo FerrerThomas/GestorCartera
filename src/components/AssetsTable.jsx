@@ -85,7 +85,9 @@ export default function AssetsTable({ assets, accounts, currency, usdArs, onAddA
               <span style={{ minWidth: 0 }}>
                 <span className="asset-ticker">{asset.ticker}</span>
                 <span className="asset-sub">
-                  {asset.name} · {accountName(asset.accountId)}
+                  {asset.name === asset.ticker
+                    ? accountName(asset.accountId)
+                    : `${asset.name} · ${accountName(asset.accountId)}`}
                 </span>
               </span>
             </div>
