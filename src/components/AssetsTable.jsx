@@ -28,6 +28,34 @@ export default function AssetsTable({ assets, accounts, currency, usdArs, onAddA
         </div>
       ) : (
         <>
+      {/* Vista móvil: tarjetas (misma data, mismo onSelectAsset). Desktop la oculta por CSS. */}
+      <div className="asset-cards">
+        {assets.map((asset) => {
+          const isFund = asset.kind === 'fund';
+          const valueARS = assetValueARS(asset, usdArs);
+          const gainARS = assetGainARS(asset, usdArs);
+          const pct = assetGainPct(asset, usdArs);
+          const gainDisplay = conv(gainARS);
+          return (
+            <div className="asset-card" key={asset.id} onClick={() => onSelectAsset?.(asset)}>
+              <AssetIcon asset={asset} accountName={accountName(asset.accountId)} />
+              <div className="asset-card-info">
+                <span className="asset-ticker">{asset.ticker}</span>
+                <span className="asset-sub">
+                  {isFund ? `${asset.tna}% TNA` : formatQty(asset.qty)} · {accountName(asset.accountId)}
+                </span>
+              </div>
+              <div className="asset-card-value">
+                <span className="mono">{formatMoney(conv(valueARS), currency)}</span>
+                <span className={'asset-card-gain ' + (gainARS >= 0 ? 'positive' : 'negative')}>
+                  {formatPct(pct)} · {(gainDisplay >= 0 ? '+' : '−') + formatMoney(Math.abs(gainDisplay), currency)}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       <div className="grid-row head">
         <div>Activo</div>
         <div className="text-right">Cantidad</div>

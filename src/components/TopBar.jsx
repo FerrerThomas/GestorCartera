@@ -1,12 +1,15 @@
 import { formatMoney, formatPct } from '../utils/finance.js';
 
-export default function TopBar({ total, invested, hora, currency, onSetCurrency, dolarBlue }) {
+export default function TopBar({ total, invested, hora, currency, onSetCurrency, dolarBlue, onToggleSidebar }) {
   const gain = total - invested;
   const pct = invested ? (gain / invested) * 100 : 0;
   const negative = gain < 0;
 
   return (
     <div className="topbar">
+      <button className="hamburger-btn" onClick={onToggleSidebar} title="Menú" aria-label="Abrir menú">
+        ☰
+      </button>
       <div>
         <div className="patrimonio-label">
           Patrimonio total

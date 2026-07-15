@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { supabase } from '../lib/supabase.js';
 import {
   fetchArgCedears,
   fetchArgStocks,
@@ -7,6 +8,10 @@ import {
 } from '../services/marketData.js';
 
 const POLL_MS = 15000;
+// Live prices are also persisted to assets.current_price so a fresh page load
+// shows a recent price instantly instead of the purchase-time one. Throttled
+// per asset so the 15s poll doesn't turn into constant DB writes.
+const PERSIST_MS = 5 * 60 * 1000;
 
 export function useMarketData(assets) {
   const [dolarBlue, setDolarBlue] = useState(null);
@@ -14,6 +19,7 @@ export function useMarketData(assets) {
   const [lastUpdated, setLastUpdated] = useState(null);
   const assetsRef = useRef(assets);
   assetsRef.current = assets;
+  const lastPersistRef = useRef({});
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +50,24 @@ export function useMarketData(assets) {
 
       setPrices((prev) => ({ ...prev, ...merged }));
       setLastUpdated(new Date());
+
+      // Best-effort persistence of fresh prices (never blocks or breaks the poll).
+      const now = Date.now();
+      const blueValue = blue.status === 'fulfilled' ? blue.value : null;
+      for (const a of current) {
+        if (a.kind === 'fund') continue;
+        const live =
+          a.category === 'Efectivo' ? (a.ticker === 'USD' ? blueValue : null) : merged[a.ticker];
+        if (live == null) continue;
+        const last = lastPersistRef.current[a.id];
+        if (last && (now - last.ts < PERSIST_MS || last.price === live)) continue;
+        lastPersistRef.current[a.id] = { ts: now, price: live };
+        supabase
+          .from('assets')
+          .update({ current_price: live })
+          .eq('id', a.id)
+          .then(() => {}, () => {});
+      }
     };
 
     poll();

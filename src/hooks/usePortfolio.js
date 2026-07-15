@@ -218,6 +218,7 @@ export function usePortfolio(user) {
           user_id: user.id,
           qty: payload.amount,
           price: 1,
+          ...(payload.occurredOn ? { occurred_on: payload.occurredOn } : {}),
         });
         if (histErr) throw histErr;
         logEvent(
@@ -231,6 +232,7 @@ export function usePortfolio(user) {
           user_id: user.id,
           qty: payload.qty,
           price: payload.price,
+          ...(payload.occurredOn ? { occurred_on: payload.occurredOn } : {}),
         });
         if (err) throw err;
         const existingAsset = assets.find((a) => a.id === payload.assetId);
@@ -260,6 +262,7 @@ export function usePortfolio(user) {
           user_id: user.id,
           qty: payload.qty,
           price: payload.price,
+          ...(payload.occurredOn ? { occurred_on: payload.occurredOn } : {}),
         });
         if (histErr) throw histErr;
         logEvent(

@@ -25,6 +25,7 @@ export default function App() {
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAddAsset, setShowAddAsset] = useState(false);
   const [showAuditLog, setShowAuditLog] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [addAssetAccountId, setAddAssetAccountId] = useState(null);
   const [selectedAssetId, setSelectedAssetId] = useState(null);
   const [actionError, setActionError] = useState('');
@@ -156,13 +157,22 @@ export default function App() {
         accountBalances={accountBalances}
         currency={currency}
         usdArs={usdArs}
-        onConnectAccount={() => setShowAddAccount(true)}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onConnectAccount={() => {
+          setSidebarOpen(false);
+          setShowAddAccount(true);
+        }}
         onAddAssetToAccount={(accountId) => {
+          setSidebarOpen(false);
           setAddAssetAccountId(accountId);
           setShowAddAsset(true);
         }}
         onDeleteAccount={handleDeleteAccount}
-        onOpenAuditLog={() => setShowAuditLog(true)}
+        onOpenAuditLog={() => {
+          setSidebarOpen(false);
+          setShowAuditLog(true);
+        }}
         onSignOut={signOut}
         userEmail={user.email}
       />
@@ -174,6 +184,7 @@ export default function App() {
           currency={currency}
           onSetCurrency={setCurrency}
           dolarBlue={dolarBlue}
+          onToggleSidebar={() => setSidebarOpen((v) => !v)}
         />
         <KpiCards
           invested={conv(investedARS)}

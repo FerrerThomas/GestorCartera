@@ -7,6 +7,8 @@ export default function Sidebar({
   accountBalances,
   currency,
   usdArs,
+  open,
+  onClose,
   onConnectAccount,
   onAddAssetToAccount,
   onDeleteAccount,
@@ -24,7 +26,9 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="sidebar">
+    <>
+    {open && <div className="sidebar-backdrop" onClick={onClose} />}
+    <aside className={'sidebar' + (open ? ' open' : '')}>
       <div className="brand">
         <div className="brand-mark">P</div>
         <div className="brand-name">Mi Portfolio</div>
@@ -113,5 +117,6 @@ export default function Sidebar({
         </button>
       </div>
     </aside>
+    </>
   );
 }

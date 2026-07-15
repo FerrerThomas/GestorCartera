@@ -37,7 +37,7 @@ export default function LoginPage() {
 
   return (
     <div className="auth-shell">
-      <div className="modal-card" style={{ width: 400 }}>
+      <div className="modal-card" style={{ width: 400, maxWidth: 'calc(100vw - 48px)' }}>
         <div className="modal-head" style={{ justifyContent: 'center', flexDirection: 'column', gap: 4 }}>
           <div className="brand" style={{ marginBottom: 4 }}>
             <div className="brand-mark">P</div>
