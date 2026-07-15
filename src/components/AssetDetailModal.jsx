@@ -23,7 +23,7 @@ export default function AssetDetailModal({ asset, accounts, currency, usdArs, on
 
   return (
     <div className="modal-overlay" onMouseDown={onClose}>
-      <div className="modal-card" style={{ width: 560 }} onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-card" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <AssetIcon asset={asset} accountName={account?.name} size={36} />

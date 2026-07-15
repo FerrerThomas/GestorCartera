@@ -51,20 +51,36 @@ export async function fetchArgCedears() {
   return catalogToMap(await fetchArgCedearsCatalog());
 }
 
+function parseBinanceRow(row, map) {
+  const price = Number(row?.price);
+  const ticker = String(row?.symbol ?? '').replace(/USDT$/, '');
+  if (ticker && Number.isFinite(price)) map[ticker] = price;
+}
+
 export async function fetchCryptoPrices(tickers) {
   const map = {};
-  if (!tickers.length) return map;
-  const symbols = tickers.map((t) => `${t}USDT`);
+  // USDT es la moneda de cotización de los pares: vale 1 USD por definición y
+  // "USDTUSDT" no existe en Binance — incluirlo en el batch tira 400 para TODOS.
+  const rest = [];
+  for (const t of tickers) {
+    if (t === 'USDT') map.USDT = 1;
+    else rest.push(t);
+  }
+  if (!rest.length) return map;
+  const symbols = rest.map((t) => `${t}USDT`);
   const url = `https://api.binance.com/api/v3/ticker/price?symbols=${encodeURIComponent(
     JSON.stringify(symbols)
   )}`;
   const data = await safeFetchJson(url);
   if (Array.isArray(data)) {
-    for (const row of data) {
-      const price = Number(row?.price);
-      const ticker = String(row?.symbol ?? '').replace(/USDT$/, '');
-      if (ticker && Number.isFinite(price)) map[ticker] = price;
-    }
+    for (const row of data) parseBinanceRow(row, map);
+    return map;
   }
+  // El batch falla entero si UN símbolo es inválido (400) — reintento de a uno
+  // para que un ticker sin par en Binance no mate los precios del resto.
+  const singles = await Promise.all(
+    rest.map((t) => safeFetchJson(`https://api.binance.com/api/v3/ticker/price?symbol=${t}USDT`))
+  );
+  for (const row of singles) if (row) parseBinanceRow(row, map);
   return map;
 }

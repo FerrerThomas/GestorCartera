@@ -4,7 +4,7 @@ import {
   formatMoney,
   formatQty,
   parseLocaleNumber,
-  todayDDMMYYYY,
+  todayISODate,
 } from '../utils/finance.js';
 import { fetchArgCedearsCatalog, fetchArgStocksCatalog, fetchDolarBlue } from '../services/marketData.js';
 import { CRYPTO_CATALOG } from '../data/cryptoCatalog.js';
@@ -36,6 +36,7 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
   const [addPrice, setAddPrice] = useState('');
   const [depositAmount, setDepositAmount] = useState('');
   const [depositTna, setDepositTna] = useState('17,5');
+  const [opDate, setOpDate] = useState(todayISODate());
 
   const [stocksCatalog, setStocksCatalog] = useState([]);
   const [cedearsCatalog, setCedearsCatalog] = useState([]);
@@ -51,6 +52,7 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
     setAddPrice('');
     setDepositAmount('');
     setDepositTna(existingFund ? String(existingFund.tna).replace('.', ',') : '17,5');
+    setOpDate(todayISODate());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
 
@@ -104,17 +106,19 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
     return t;
   };
 
-  const canSubmit = tab === 'compra' && !!selectedTicker && q > 0 && p > 0;
+  const dateValid = !!opDate && opDate <= todayISODate();
+  const canSubmit = tab === 'compra' && !!selectedTicker && q > 0 && p > 0 && dateValid;
 
   const submit = () => {
     if (!canSubmit) return;
     if (existingAsset) {
-      onSubmit({ type: 'existing', assetId: existingAsset.id, qty: q, price: p });
+      onSubmit({ type: 'existing', assetId: existingAsset.id, qty: q, price: p, occurredOn: opDate });
     } else {
       onSubmit({
         type: 'new',
         qty: q,
         price: p,
+        occurredOn: opDate,
         asset: {
           ticker: selectedTicker,
           name: nameFor(selectedTicker),
@@ -128,7 +132,7 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
 
   const depositAmountNum = parseLocaleNumber(depositAmount);
   const depositTnaNum = parseLocaleNumber(depositTna);
-  const canSubmitDeposit = depositAmountNum > 0 && depositTnaNum >= 0;
+  const canSubmitDeposit = depositAmountNum > 0 && depositTnaNum >= 0 && dateValid;
 
   const submitDeposit = () => {
     if (!canSubmitDeposit) return;
@@ -138,6 +142,7 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
       amount: depositAmountNum,
       tna: depositTnaNum,
       existingAssetId: existingFund?.id ?? null,
+      occurredOn: opDate,
     });
   };
 
@@ -200,6 +205,16 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
                     />
                   </label>
                 </div>
+                <label className="field">
+                  <span className="field-label">Fecha del depósito</span>
+                  <input
+                    type="date"
+                    className="mono"
+                    value={opDate}
+                    max={todayISODate()}
+                    onChange={(e) => setOpDate(e.target.value)}
+                  />
+                </label>
                 <div className="op-total">
                   Saldo actual: <span>{formatMoney(existingFund?.value ?? 0, 'ARS')}</span>
                 </div>
@@ -346,7 +361,13 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
                     <div className="field-grid">
                       <label className="field">
                         <span className="field-label">Fecha</span>
-                        <input className="mono" value={todayDDMMYYYY()} readOnly />
+                        <input
+                          type="date"
+                          className="mono"
+                          value={opDate}
+                          max={todayISODate()}
+                          onChange={(e) => setOpDate(e.target.value)}
+                        />
                       </label>
                       <label className="field">
                         <span className="field-label">Comisión (opcional)</span>

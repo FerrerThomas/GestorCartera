@@ -36,7 +36,7 @@ export default function AuditLogModal({ onClose }) {
 
   return (
     <div className="modal-overlay" onMouseDown={onClose}>
-      <div className="modal-card" style={{ width: 560 }} onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-card" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div className="modal-title">Movimientos</div>
           <button className="modal-close" onClick={onClose}>
