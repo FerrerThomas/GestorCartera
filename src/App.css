@@ -993,6 +993,49 @@
   color: var(--text-dim);
 }
 
+/* ---------- Skins CS2 ---------- */
+
+.skin-image-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.skin-image-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.skin-image-preview {
+  width: 56px;
+  height: 42px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel-alt);
+  flex: none;
+}
+
+.detail-image-box {
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel-alt);
+}
+
+.detail-image-box img {
+  max-width: 100%;
+  max-height: 140px;
+  object-fit: contain;
+}
+
+/* Las imágenes de skins son apaisadas: contain, no cover */
+.asset-icon-img {
+  object-fit: contain;
+}
+
 /* ---------- Responsive móvil ---------- */
 
 /* Hamburguesa y tarjetas: solo existen en móvil */

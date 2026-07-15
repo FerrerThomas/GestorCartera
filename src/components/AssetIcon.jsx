@@ -5,7 +5,8 @@ import { getAssetLogoUrl } from '../data/logos.js';
 // no known logo or the image fails to load.
 export default function AssetIcon({ asset, accountName, size = 30 }) {
   const [failed, setFailed] = useState(false);
-  const url = getAssetLogoUrl(asset, accountName);
+  // La imagen propia del activo (skins CS2 / URL manual) pisa el logo curado.
+  const url = asset.imageUrl || getAssetLogoUrl(asset, accountName);
 
   if (!url || failed) {
     return (

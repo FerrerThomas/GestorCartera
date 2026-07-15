@@ -15,6 +15,10 @@ export const ACCOUNT_TYPES = {
     label: 'Efectivo',
     description: 'Pesos o dólares fuera del sistema.',
   },
+  steam: {
+    label: 'Steam / Skins CS2',
+    description: 'Skins de Counter-Strike 2 valuadas a precio de mercado (Skinport).',
+  },
 };
 
 export const ACCOUNT_DOT_COLOR = {
@@ -22,4 +26,5 @@ export const ACCOUNT_DOT_COLOR = {
   billetera: '#37c1f2',
   exchange: '#f2a137',
   efectivo: '#8a93a6',
+  steam: '#a897ff',
 };
