@@ -104,13 +104,27 @@ export default function AssetDetailModal({ asset, accounts, currency, usdArs, on
                   >
                     <span style={{ color: 'var(--text-dim)' }}>{h.date}</span>
                     {isFund ? (
-                      <span>Depósito · {formatMoney(h.qty, 'ARS')}</span>
-                    ) : (
+                      h.qty >= 0 ? (
+                        <span>Depósito · {formatMoney(h.qty, 'ARS')}</span>
+                      ) : (
+                        <span style={{ color: 'var(--negative)' }}>
+                          Retiro · {formatMoney(Math.abs(h.qty), 'ARS')}
+                        </span>
+                      )
+                    ) : h.qty >= 0 ? (
                       <span>
                         Compra · {formatQty(h.qty)} × {formatMoney(h.price, assetCurrency)}
                         <span style={{ color: 'var(--text-faint)' }}>
                           {' '}
                           = {formatMoney(h.qty * h.price, assetCurrency)}
+                        </span>
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--negative)' }}>
+                        Venta · {formatQty(Math.abs(h.qty))} × {formatMoney(h.price, assetCurrency)}
+                        <span style={{ opacity: 0.7 }}>
+                          {' '}
+                          = {formatMoney(Math.abs(h.qty) * h.price, assetCurrency)}
                         </span>
                       </span>
                     )}

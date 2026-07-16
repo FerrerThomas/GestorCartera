@@ -82,8 +82,13 @@ function mapAsset(row) {
     };
   }
 
+  // Compras recalculan el PPC; las ventas (qty negativa) solo restan cantidad —
+  // vender no cambia el precio promedio de lo que queda (estándar contable).
   const { newQty, newAvgPrice } = history.reduce(
-    (acc, h) => calcAveragePrice(acc.newQty, acc.newAvgPrice, h.qty, h.price),
+    (acc, h) => {
+      if (h.qty > 0) return calcAveragePrice(acc.newQty, acc.newAvgPrice, h.qty, h.price);
+      return { ...acc, newQty: Math.max(0, acc.newQty + h.qty) };
+    },
     { newQty: 0, newAvgPrice: 0, newInvested: 0 }
   );
 
@@ -226,6 +231,50 @@ export function usePortfolio(user) {
           user.id,
           isNewFund ? 'fund_created' : 'fund_deposit',
           `${isNewFund ? 'Billetera activada' : 'Depósito'} en ${accountName(payload.accountId)}: ${formatMoney(payload.amount, 'ARS')}`
+        );
+      } else if (payload.type === 'fund_withdraw') {
+        // Retiro de billetera: baja el principal y deja la fila negativa en el
+        // ledger (misma lectura fresca anti-stale que el depósito).
+        const { data: current, error: readErr } = await supabase
+          .from('assets')
+          .select('fund_value')
+          .eq('id', payload.assetId)
+          .single();
+        if (readErr) throw readErr;
+        const { error: err } = await supabase
+          .from('assets')
+          .update({ fund_value: Number(current?.fund_value ?? 0) - payload.amount })
+          .eq('id', payload.assetId);
+        if (err) throw err;
+        const { error: histErr } = await supabase.from('asset_history').insert({
+          asset_id: payload.assetId,
+          user_id: user.id,
+          qty: -payload.amount,
+          price: 1,
+          ...(payload.occurredOn ? { occurred_on: payload.occurredOn } : {}),
+        });
+        if (histErr) throw histErr;
+        logEvent(
+          user.id,
+          'fund_withdrawal',
+          `Retiro de ${accountName(payload.accountId)}: ${formatMoney(payload.amount, 'ARS')}`
+        );
+      } else if (payload.type === 'sell') {
+        const asset = assets.find((a) => a.id === payload.assetId);
+        const { error: err } = await supabase.from('asset_history').insert({
+          asset_id: payload.assetId,
+          user_id: user.id,
+          qty: -payload.qty,
+          price: payload.price,
+          ...(payload.occurredOn ? { occurred_on: payload.occurredOn } : {}),
+        });
+        if (err) throw err;
+        const cur = asset?.currency === 'USD' ? 'USD' : 'ARS';
+        const realized = payload.qty * (payload.price - (asset?.avgPrice ?? payload.price));
+        logEvent(
+          user.id,
+          'asset_sold',
+          `Venta: ${payload.qty} ${asset?.ticker ?? payload.assetId} a ${formatMoney(payload.price, cur)} — resultado ${(realized >= 0 ? '+' : '−') + formatMoney(Math.abs(realized), cur)}`
         );
       } else if (payload.type === 'existing') {
         const { error: err } = await supabase.from('asset_history').insert({
