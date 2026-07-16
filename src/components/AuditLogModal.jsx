@@ -9,6 +9,8 @@ const ACTION_COLOR = {
   asset_deleted: 'var(--negative)',
   fund_created: 'var(--blue)',
   fund_deposit: 'var(--blue)',
+  asset_sold: 'var(--orange)',
+  fund_withdrawal: 'var(--orange)',
 };
 
 function formatDateTime(iso) {

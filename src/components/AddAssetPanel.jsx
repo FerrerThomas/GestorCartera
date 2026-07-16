@@ -42,7 +42,11 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
   const [addPrice, setAddPrice] = useState('');
   const [depositAmount, setDepositAmount] = useState('');
   const [depositTna, setDepositTna] = useState('17,5');
+  const [depositMode, setDepositMode] = useState('deposito');
   const [opDate, setOpDate] = useState(todayISODate());
+  const [sellAssetId, setSellAssetId] = useState('');
+  const [sellQty, setSellQty] = useState('');
+  const [sellPrice, setSellPrice] = useState('');
 
   const [stocksCatalog, setStocksCatalog] = useState([]);
   const [cedearsCatalog, setCedearsCatalog] = useState([]);
@@ -63,6 +67,10 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
     setDepositTna(existingFund ? String(existingFund.tna).replace('.', ',') : '17,5');
     setOpDate(todayISODate());
     setImageUrl('');
+    setDepositMode('deposito');
+    setSellAssetId('');
+    setSellQty('');
+    setSellPrice('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
 
@@ -146,6 +154,55 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
   const dateValid = !!opDate && opDate <= todayISODate();
   const canSubmit = tab === 'compra' && !!selectedTicker && q > 0 && p > 0 && dateValid;
 
+  // ----- Venta -----
+  const sellable = purchasable.filter((a) => (a.qty ?? 0) > 0);
+  const sellAsset = sellable.find((a) => a.id === sellAssetId);
+  const sellCurrency = sellAsset?.currency === 'USD' ? 'USD' : 'ARS';
+
+  // Preseleccionar el primer activo vendible y prellenar el precio actual.
+  useEffect(() => {
+    if (tab !== 'venta') return;
+    if (!sellAsset && sellable.length > 0) {
+      setSellAssetId(sellable[0].id);
+      return;
+    }
+    if (sellAsset) {
+      const isCash = sellAsset.category === 'Efectivo';
+      setSellPrice(
+        isCash ? '' : String(sellAsset.currentPrice ?? '').replace('.', ',')
+      );
+      setSellQty('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, sellAssetId, sellable.length]);
+
+  const sellIsCash = sellAsset?.category === 'Efectivo';
+  const sellQtyNum = parseLocaleNumber(sellQty);
+  const sellPriceNum = sellIsCash
+    ? sellAsset?.ticker === 'ARS'
+      ? 1
+      : sellAsset?.currentPrice ?? 0
+    : parseLocaleNumber(sellPrice);
+  const sellRealized = sellAsset ? sellQtyNum * (sellPriceNum - (sellAsset.avgPrice ?? 0)) : 0;
+  const canSubmitSell =
+    tab === 'venta' &&
+    !!sellAsset &&
+    sellQtyNum > 0 &&
+    sellQtyNum <= (sellAsset?.qty ?? 0) &&
+    sellPriceNum > 0 &&
+    dateValid;
+
+  const submitSell = () => {
+    if (!canSubmitSell) return;
+    onSubmit({
+      type: 'sell',
+      assetId: sellAsset.id,
+      qty: sellQtyNum,
+      price: sellPriceNum,
+      occurredOn: opDate,
+    });
+  };
+
   const submit = () => {
     if (!canSubmit) return;
     if (existingAsset) {
@@ -170,18 +227,32 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
 
   const depositAmountNum = parseLocaleNumber(depositAmount);
   const depositTnaNum = parseLocaleNumber(depositTna);
-  const canSubmitDeposit = depositAmountNum > 0 && depositTnaNum >= 0 && dateValid;
+  const isWithdraw = depositMode === 'retiro';
+  const fundBalance = existingFund?.value ?? 0;
+  const canSubmitDeposit = isWithdraw
+    ? !!existingFund && depositAmountNum > 0 && depositAmountNum <= fundBalance && dateValid
+    : depositAmountNum > 0 && depositTnaNum >= 0 && dateValid;
 
   const submitDeposit = () => {
     if (!canSubmitDeposit) return;
-    onSubmit({
-      type: 'fund_topup',
-      accountId,
-      amount: depositAmountNum,
-      tna: depositTnaNum,
-      existingAssetId: existingFund?.id ?? null,
-      occurredOn: opDate,
-    });
+    if (isWithdraw) {
+      onSubmit({
+        type: 'fund_withdraw',
+        accountId,
+        assetId: existingFund.id,
+        amount: depositAmountNum,
+        occurredOn: opDate,
+      });
+    } else {
+      onSubmit({
+        type: 'fund_topup',
+        accountId,
+        amount: depositAmountNum,
+        tna: depositTnaNum,
+        existingAssetId: existingFund?.id ?? null,
+        occurredOn: opDate,
+      });
+    }
   };
 
   const stockOptions = brokerCategory === 'Acción' ? stocksCatalog : cedearsCatalog;
@@ -222,8 +293,25 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
 
             {isBilletera ? (
               <>
-                <div style={{ color: 'var(--text-dim)', fontSize: 13 }}>Depósito de capital</div>
-                <div className="field-grid">
+                <div className="type-toggle-row">
+                  <button
+                    type="button"
+                    className={'type-toggle-btn' + (!isWithdraw ? ' active' : '')}
+                    onClick={() => setDepositMode('deposito')}
+                  >
+                    Depósito
+                  </button>
+                  <button
+                    type="button"
+                    className={'type-toggle-btn' + (isWithdraw ? ' active' : '')}
+                    onClick={() => setDepositMode('retiro')}
+                    disabled={!existingFund}
+                    title={!existingFund ? 'Todavía no hay saldo en esta billetera' : undefined}
+                  >
+                    Retiro
+                  </button>
+                </div>
+                <div className={isWithdraw ? '' : 'field-grid'}>
                   <label className="field">
                     <span className="field-label">Monto (ARS)</span>
                     <input
@@ -232,16 +320,23 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
                       onChange={(e) => setDepositAmount(e.target.value)}
                       placeholder="0"
                     />
+                    {isWithdraw && (
+                      <span className="have-qty" style={{ marginLeft: 0 }}>
+                        disponible: {formatMoney(fundBalance, 'ARS')}
+                      </span>
+                    )}
                   </label>
-                  <label className="field">
-                    <span className="field-label">TNA (%)</span>
-                    <input
-                      className="mono"
-                      value={depositTna}
-                      onChange={(e) => setDepositTna(e.target.value)}
-                      placeholder="17,5"
-                    />
-                  </label>
+                  {!isWithdraw && (
+                    <label className="field">
+                      <span className="field-label">TNA (%)</span>
+                      <input
+                        className="mono"
+                        value={depositTna}
+                        onChange={(e) => setDepositTna(e.target.value)}
+                        placeholder="17,5"
+                      />
+                    </label>
+                  )}
                 </div>
                 <label className="field">
                   <span className="field-label">Fecha del depósito</span>
@@ -254,10 +349,10 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
                   />
                 </label>
                 <div className="op-total">
-                  Saldo actual: <span>{formatMoney(existingFund?.value ?? 0, 'ARS')}</span>
+                  Saldo actual: <span>{formatMoney(fundBalance, 'ARS')}</span>
                 </div>
                 <button className="btn-submit" disabled={!canSubmitDeposit} onClick={submitDeposit}>
-                  Depositar
+                  {isWithdraw ? 'Retirar' : 'Depositar'}
                 </button>
               </>
             ) : (
@@ -277,11 +372,88 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
                   </button>
                 </div>
 
-                {tab === 'venta' && (
-                  <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '8px 0' }}>
-                    Próximamente. Por ahora podés registrar compras.
-                  </div>
-                )}
+                {tab === 'venta' &&
+                  (sellable.length === 0 ? (
+                    <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '8px 0' }}>
+                      No hay activos para vender en esta cuenta.
+                    </div>
+                  ) : (
+                    <>
+                      <label className="field">
+                        <span className="field-label">Activo</span>
+                        <select value={sellAssetId} onChange={(e) => setSellAssetId(e.target.value)}>
+                          {sellable.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.ticker} — tenés {formatQty(a.qty)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <div className={sellIsCash ? '' : 'field-grid'}>
+                        <label className="field">
+                          <span className="field-label">
+                            {sellIsCash ? `Monto (${sellAsset?.ticker})` : 'Cantidad'}
+                          </span>
+                          <input
+                            className="mono"
+                            value={sellQty}
+                            onChange={(e) => setSellQty(e.target.value)}
+                            placeholder="0"
+                          />
+                          {sellAsset && (
+                            <button
+                              type="button"
+                              className="have-qty"
+                              style={{
+                                marginLeft: 0,
+                                background: 'none',
+                                border: 'none',
+                                padding: 0,
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                              }}
+                              onClick={() =>
+                                setSellQty(String(sellAsset.qty).replace('.', ','))
+                              }
+                            >
+                              máx: {formatQty(sellAsset.qty)}
+                            </button>
+                          )}
+                        </label>
+                        {!sellIsCash && (
+                          <label className="field">
+                            <span className="field-label">Precio de venta ({sellCurrency})</span>
+                            <input
+                              className="mono"
+                              value={sellPrice}
+                              onChange={(e) => setSellPrice(e.target.value)}
+                              placeholder="0"
+                            />
+                          </label>
+                        )}
+                      </div>
+
+                      <label className="field" style={{ maxWidth: 220 }}>
+                        <span className="field-label">Fecha</span>
+                        <input
+                          type="date"
+                          className="mono"
+                          value={opDate}
+                          max={todayISODate()}
+                          onChange={(e) => setOpDate(e.target.value)}
+                        />
+                      </label>
+
+                      <div className="op-total">
+                        Total venta: <span>{formatMoney(sellQtyNum * sellPriceNum, sellCurrency)}</span>
+                      </div>
+
+                      <button className="btn-submit" disabled={!canSubmitSell} onClick={submitSell}>
+                        Registrar venta
+                      </button>
+                    </>
+                  ))}
 
                 {tab === 'compra' && (
                   <>
@@ -470,9 +642,48 @@ export default function AddAssetPanel({ assets, accounts, initialAccountId, onCl
                 <div className="ppc-card">
                   <div className="ppc-label">Saldo nuevo</div>
                   <div className="ppc-value">
-                    {formatMoney((existingFund?.value ?? 0) + depositAmountNum, 'ARS')}
+                    {formatMoney(
+                      fundBalance + (isWithdraw ? -depositAmountNum : depositAmountNum),
+                      'ARS'
+                    )}
                   </div>
-                  <div className="ppc-before">TNA: {depositTna || '0'}%</div>
+                  <div className="ppc-before">
+                    {isWithdraw ? `retiro: ${formatMoney(depositAmountNum, 'ARS')}` : `TNA: ${depositTna || '0'}%`}
+                  </div>
+                </div>
+              </>
+            ) : tab === 'venta' ? (
+              <>
+                <div className="summary-eyebrow">
+                  Venta de {sellAsset?.ticker ?? '—'}
+                </div>
+                <div className="ppc-card">
+                  <div className="ppc-label">Resultado realizado</div>
+                  <div
+                    className="ppc-value"
+                    style={{ color: sellRealized >= 0 ? 'var(--positive)' : 'var(--negative)' }}
+                  >
+                    {(sellRealized >= 0 ? '+' : '−') + formatMoney(Math.abs(sellRealized), sellCurrency)}
+                  </div>
+                  <div className="ppc-before">
+                    {sellAsset
+                      ? `PPC: ${formatMoney(sellAsset.avgPrice ?? 0, sellCurrency)}`
+                      : 'elegí un activo'}
+                  </div>
+                </div>
+                <div className="mini-grid">
+                  <div className="mini-card">
+                    <div className="mini-label">Cantidad restante</div>
+                    <div className="mini-value">
+                      {sellAsset ? formatQty(Math.max(0, (sellAsset.qty ?? 0) - sellQtyNum)) : '—'}
+                    </div>
+                  </div>
+                  <div className="mini-card">
+                    <div className="mini-label">Total venta</div>
+                    <div className="mini-value">
+                      {formatMoney(sellQtyNum * sellPriceNum, sellCurrency)}
+                    </div>
+                  </div>
                 </div>
               </>
             ) : (

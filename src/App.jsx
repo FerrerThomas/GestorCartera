@@ -61,6 +61,17 @@ export default function App() {
     [assets, prices, dolarBlue]
   );
 
+  // Posiciones vendidas por completo (o fondos vaciados) salen del dashboard;
+  // siguen en `displayAssets` para que el panel de compra detecte el activo
+  // existente y para conservar su historial.
+  const visibleAssets = useMemo(
+    () =>
+      displayAssets.filter((a) =>
+        a.kind === 'fund' ? a.value > 0.01 : (a.qty ?? 0) > 0
+      ),
+    [displayAssets]
+  );
+
   const totalARS = useMemo(
     () => displayAssets.reduce((sum, a) => sum + assetValueARS(a, usdArs), 0),
     [displayAssets, usdArs]
@@ -80,13 +91,13 @@ export default function App() {
   );
 
   const bestAsset = useMemo(() => {
-    const priced = displayAssets.filter((a) => a.kind !== 'fund');
+    const priced = visibleAssets.filter((a) => a.kind !== 'fund');
     if (!priced.length) return null;
     const best = priced.reduce((b, a) =>
       assetGainPct(a, usdArs) > assetGainPct(b, usdArs) ? a : b
     );
     return { ticker: best.ticker, pct: assetGainPct(best, usdArs) };
-  }, [displayAssets, usdArs]);
+  }, [visibleAssets, usdArs]);
 
   const accountBalances = useMemo(() => {
     const map = {};
@@ -196,7 +207,7 @@ export default function App() {
           <div style={{ color: 'var(--negative)', fontSize: 12.5 }}>{error || actionError}</div>
         )}
         <AssetsTable
-          assets={displayAssets}
+          assets={visibleAssets}
           accounts={accounts}
           currency={currency}
           usdArs={usdArs}
