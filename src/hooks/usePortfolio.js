@@ -331,6 +331,7 @@ export function usePortfolio(user) {
     accounts,
     assets,
     setAssets,
+    reload,
     loading,
     error,
     createAccount,

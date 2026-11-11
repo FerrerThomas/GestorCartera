@@ -1,58 +1,127 @@
-import { useEffect, useMemo, useState } from 'react';
-import './App.css';
-import Sidebar from './components/Sidebar.jsx';
-import TopBar from './components/TopBar.jsx';
-import KpiCards from './components/KpiCards.jsx';
-import AssetsTable from './components/AssetsTable.jsx';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AddAccountModal from './components/AddAccountModal.jsx';
-import AddAssetPanel from './components/AddAssetPanel.jsx';
-import AssetDetailModal from './components/AssetDetailModal.jsx';
 import AuditLogModal from './components/AuditLogModal.jsx';
-import PortfolioChart from './components/PortfolioChart.jsx';
+import AddAssetSheet from './components/glass/AddAssetSheet.jsx';
+import AssetDetailSheet from './components/glass/AssetDetailSheet.jsx';
+import MovementSheet from './components/glass/MovementSheet.jsx';
+import TradeSheet from './components/glass/TradeSheet.jsx';
+import { ActionSheet, TabBar, Toast } from './components/glass/ui.jsx';
 import { useAuth } from './context/AuthContext.jsx';
-import { usePortfolio } from './hooks/usePortfolio.js';
 import { useMarketData } from './hooks/useMarketData.js';
+import {
+  currentMonthKey,
+  movementActions,
+  summarizeMonth,
+  useCategories,
+  useMonthMovements,
+} from './hooks/useMovements.js';
+import { usePortfolio } from './hooks/usePortfolio.js';
 import { usePortfolioHistory } from './hooks/usePortfolioHistory.js';
-import { assetValueARS, assetInvestedARS, assetGainPct, USD_ARS } from './utils/finance.js';
+import AjustesScreen from './screens/AjustesScreen.jsx';
+import CarteraScreen from './screens/CarteraScreen.jsx';
+import MovimientosScreen, { describeMovement } from './screens/MovimientosScreen.jsx';
+import PresupuestosScreen from './screens/PresupuestosScreen.jsx';
+import ResumenScreen from './screens/ResumenScreen.jsx';
+import { USD_ARS, assetValueARS, formatAmount } from './utils/finance.js';
+
+const SCREENS = ['resumen', 'movimientos', 'presupuesto', 'cartera', 'ajustes'];
+const ACTION_TYPES = { gasto: 'expense', ingreso: 'income', transferencia: 'transfer' };
+
+function screenFromHash() {
+  const id = window.location.hash.replace(/^#\/?/, '');
+  return SCREENS.includes(id) ? id : 'resumen';
+}
+
+function readCurrency() {
+  try {
+    return localStorage.getItem('currency') === 'USD' ? 'USD' : 'ARS';
+  } catch {
+    return 'ARS';
+  }
+}
 
 export default function App() {
   const { user, signOut } = useAuth();
-  const { accounts, assets, loading, error, createAccount, deleteAccount, addAsset, deleteAsset } =
+  const { accounts, assets, reload, loading, error, createAccount, deleteAccount, addAsset, deleteAsset } =
     usePortfolio(user);
   const { dolarBlue, prices } = useMarketData(assets);
-  const [currency, setCurrency] = useState('ARS');
-  const [hora, setHora] = useState('');
+  const [screen, setScreen] = useState(screenFromHash);
+  const [currency, setCurrencyState] = useState(readCurrency);
+  const [version, setVersion] = useState(0);
+  const [sheetType, setSheetType] = useState(null);
+  const [toast, setToast] = useState('');
+  const [selectedMovement, setSelectedMovement] = useState(null);
+  const [movMonth, setMovMonth] = useState(currentMonthKey());
+  const [accountFilter, setAccountFilter] = useState(null);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAddAsset, setShowAddAsset] = useState(false);
-  const [showAuditLog, setShowAuditLog] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [addAssetAccountId, setAddAssetAccountId] = useState(null);
   const [selectedAssetId, setSelectedAssetId] = useState(null);
-  const [actionError, setActionError] = useState('');
-
-  useEffect(() => {
-    const tick = () =>
-      setHora(
-        new Date().toLocaleTimeString('es-AR', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
-      );
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
+  const [showAuditLog, setShowAuditLog] = useState(false);
+  const [tradeMode, setTradeMode] = useState(null);
 
   const usdArs = dolarBlue ?? USD_ARS;
+  const bump = useCallback(() => setVersion((v) => v + 1), []);
+  const clearToast = useCallback(() => setToast(''), []);
 
-  // Layers live-fetched prices over the DB-sourced assets for display only —
-  // usePortfolio's own `assets` stays the raw persisted shape.
+  useEffect(() => {
+    if (error) setToast(error);
+  }, [error]);
+
+  const setCurrency = (c) => {
+    setCurrencyState(c);
+    try {
+      localStorage.setItem('currency', c);
+    } catch {
+      // sin storage: queda solo en memoria
+    }
+  };
+
+  // Navegación por hash (#/cartera) para que funcione el "atrás" del sistema.
+  useEffect(() => {
+    const onHash = () => setScreen(screenFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const goto = useCallback((id, opts) => {
+    if (opts?.accountId !== undefined) setAccountFilter(opts.accountId);
+    window.location.hash = `#/${id}`;
+    setScreen(id);
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  // Accesos directos del manifest / Atajos: ?accion=gasto|ingreso|transferencia
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = ACTION_TYPES[params.get('accion')];
+    if (t) {
+      setSheetType(t);
+      params.delete('accion');
+      const qs = params.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+    }
+  }, []);
+
+  // Barra de estado / pestaña de Safari del color del encabezado de cada pantalla.
+  useEffect(() => {
+    const color = getComputedStyle(document.documentElement).getPropertyValue(`--hero-${screen}`).trim();
+    if (!color) return;
+    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', color));
+  }, [screen]);
+
+  const { categories, missing: missingCategories } = useCategories(user, version);
+  const current = useMonthMovements(user, currentMonthKey(), version);
+  const browsing = useMonthMovements(user, movMonth, version);
+  const missingMigration = missingCategories || current.missing;
+
+  const monthSummary = useMemo(() => summarizeMonth(current.movements, usdArs), [current.movements, usdArs]);
+  const browsingSummary = useMemo(() => summarizeMonth(browsing.movements, usdArs), [browsing.movements, usdArs]);
+
+  // Precios en vivo sobre lo persistido (solo para mostrar).
   const displayAssets = useMemo(
     () =>
       assets.map((a) => {
         if (a.kind === 'fund') return a;
-        // Solo el dólar billete sigue la cotización blue; los pesos valen siempre 1.
         if (a.category === 'Efectivo')
           return a.ticker === 'USD' && dolarBlue != null ? { ...a, currentPrice: dolarBlue } : a;
         const live = prices[a.ticker];
@@ -60,191 +129,232 @@ export default function App() {
       }),
     [assets, prices, dolarBlue]
   );
-
-  // Posiciones vendidas por completo (o fondos vaciados) salen del dashboard;
-  // siguen en `displayAssets` para que el panel de compra detecte el activo
-  // existente y para conservar su historial.
   const visibleAssets = useMemo(
-    () =>
-      displayAssets.filter((a) =>
-        a.kind === 'fund' ? a.value > 0.01 : (a.qty ?? 0) > 0
-      ),
+    () => displayAssets.filter((a) => (a.kind === 'fund' ? a.value > 0.01 : (a.qty ?? 0) > 0)),
     [displayAssets]
   );
-
   const totalARS = useMemo(
     () => displayAssets.reduce((sum, a) => sum + assetValueARS(a, usdArs), 0),
     [displayAssets, usdArs]
   );
-  const investedARS = useMemo(
-    () => displayAssets.reduce((sum, a) => sum + assetInvestedARS(a, usdArs), 0),
-    [displayAssets, usdArs]
-  );
-  const liquidityARS = useMemo(
-    () =>
-      displayAssets.reduce(
-        (sum, a) =>
-          sum + (a.kind === 'fund' || a.category === 'Efectivo' ? assetValueARS(a, usdArs) : 0),
-        0
-      ),
-    [displayAssets, usdArs]
-  );
-
-  const bestAsset = useMemo(() => {
-    const priced = visibleAssets.filter((a) => a.kind !== 'fund');
-    if (!priced.length) return null;
-    const best = priced.reduce((b, a) =>
-      assetGainPct(a, usdArs) > assetGainPct(b, usdArs) ? a : b
-    );
-    return { ticker: best.ticker, pct: assetGainPct(best, usdArs) };
-  }, [visibleAssets, usdArs]);
-
   const accountBalances = useMemo(() => {
     const map = {};
     for (const acc of accounts) map[acc.id] = 0;
-    for (const a of displayAssets) {
-      map[a.accountId] = (map[a.accountId] ?? 0) + assetValueARS(a, usdArs);
-    }
+    for (const a of displayAssets) map[a.accountId] = (map[a.accountId] ?? 0) + assetValueARS(a, usdArs);
     return map;
   }, [accounts, displayAssets, usdArs]);
-
-  const conv = (v) => (currency === 'USD' ? v / usdArs : v);
+  // Plata disponible para gastar por cuenta y moneda (billetera + efectivo).
+  const cashByAccount = useMemo(() => {
+    const map = {};
+    for (const a of displayAssets) {
+      const m = (map[a.accountId] ??= { ARS: 0, USD: 0 });
+      if (a.kind === 'fund') m.ARS += a.value;
+      else if (a.category === 'Efectivo' && (a.ticker === 'ARS' || a.ticker === 'USD')) m[a.ticker] += a.qty ?? 0;
+    }
+    return map;
+  }, [displayAssets]);
 
   const portfolioHistory = usePortfolioHistory(user, totalARS, totalARS / usdArs, !loading);
 
-  const handleCreateAccount = async (data) => {
+  const run = async (fn, okMsg) => {
     try {
-      setActionError('');
-      await createAccount(data);
-      setShowAddAccount(false);
+      await fn();
+      if (okMsg) setToast(okMsg);
+      return true;
     } catch (e) {
-      setActionError(e.message);
+      setToast(e.message);
+      return false;
     }
   };
 
-  const handleAddAssetSubmit = async (payload) => {
-    try {
-      setActionError('');
-      await addAsset(payload);
-      setShowAddAsset(false);
-      setAddAssetAccountId(null);
-    } catch (e) {
-      setActionError(e.message);
+  const openNew = (type) => {
+    if (!accounts.length) {
+      setToast('Primero creá una cuenta en Ajustes.');
+      return;
     }
-  };
-
-  const handleDeleteAccount = async (accountId) => {
-    try {
-      setActionError('');
-      await deleteAccount(accountId);
-    } catch (e) {
-      setActionError(e.message);
-    }
-  };
-
-  const handleDeleteAsset = async (assetId) => {
-    try {
-      setActionError('');
-      await deleteAsset(assetId);
-      setSelectedAssetId(null);
-    } catch (e) {
-      setActionError(e.message);
-    }
+    setSheetType(type);
   };
 
   if (loading) {
     return (
       <div className="auth-shell">
-        <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>Cargando tu portfolio…</span>
+        <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 15 }}>Cargando tu patrimonio…</span>
       </div>
     );
   }
 
+  const selectedAsset = selectedAssetId ? displayAssets.find((a) => a.id === selectedAssetId) : null;
+
   return (
-    <div className="app">
-      <Sidebar
-        accounts={accounts}
-        assets={assets}
-        accountBalances={accountBalances}
-        currency={currency}
-        usdArs={usdArs}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onConnectAccount={() => {
-          setSidebarOpen(false);
-          setShowAddAccount(true);
-        }}
-        onAddAssetToAccount={(accountId) => {
-          setSidebarOpen(false);
-          setAddAssetAccountId(accountId);
-          setShowAddAsset(true);
-        }}
-        onDeleteAccount={handleDeleteAccount}
-        onOpenAuditLog={() => {
-          setSidebarOpen(false);
-          setShowAuditLog(true);
-        }}
-        onSignOut={signOut}
-        userEmail={user.email}
-      />
-      <main className="main">
-        <TopBar
-          total={conv(totalARS)}
-          invested={conv(investedARS)}
-          hora={hora || '—:—:—'}
+    <div className="shell">
+      {screen === 'resumen' && (
+        <ResumenScreen
+          userEmail={user.email}
           currency={currency}
           onSetCurrency={setCurrency}
-          dolarBlue={dolarBlue}
-          onToggleSidebar={() => setSidebarOpen((v) => !v)}
+          totalARS={totalARS}
+          usdArs={usdArs}
+          history={portfolioHistory}
+          accounts={accounts}
+          assets={visibleAssets}
+          accountBalances={accountBalances}
+          month={monthSummary}
+          categories={categories}
+          missingMigration={missingMigration}
+          onNew={openNew}
+          onOpenSettings={() => goto('ajustes')}
+          onOpenHistory={() => setShowAuditLog(true)}
+          onGoto={goto}
         />
-        <KpiCards
-          invested={conv(investedARS)}
-          bestAsset={bestAsset}
-          liquidity={conv(liquidityARS)}
-          currency={currency}
+      )}
+      {screen === 'movimientos' && (
+        <MovimientosScreen
+          monthKey={movMonth}
+          onChangeMonth={setMovMonth}
+          movements={browsing.movements}
+          summary={browsingSummary}
+          categories={categories}
+          accounts={accounts}
+          loading={browsing.loading}
+          missingMigration={browsing.missing}
+          onNew={openNew}
+          onSelectMovement={setSelectedMovement}
         />
-        {(error || actionError) && (
-          <div style={{ color: 'var(--negative)', fontSize: 12.5 }}>{error || actionError}</div>
-        )}
-        <AssetsTable
+      )}
+      {screen === 'presupuesto' && (
+        <PresupuestosScreen
+          user={user}
+          categories={categories}
+          missingCategories={missingCategories}
+          version={version}
+          usdArs={usdArs}
+          onChanged={bump}
+          onToast={setToast}
+        />
+      )}
+      {screen === 'cartera' && (
+        <CarteraScreen
           assets={visibleAssets}
           accounts={accounts}
           currency={currency}
           usdArs={usdArs}
-          onAddAsset={() => setShowAddAsset(true)}
-          onSelectAsset={(asset) => setSelectedAssetId(asset.id)}
+          history={portfolioHistory}
+          totalARS={totalARS}
+          accountFilter={accountFilter}
+          onClearAccount={() => setAccountFilter(null)}
+          onSelectAsset={(a) => setSelectedAssetId(a.id)}
+          onAddAsset={() => {
+            setAddAssetAccountId(accountFilter);
+            setShowAddAsset(true);
+          }}
         />
-        <PortfolioChart history={portfolioHistory} currency={currency} />
-      </main>
+      )}
+      {screen === 'ajustes' && (
+        <AjustesScreen
+          user={user}
+          accounts={accounts}
+          assets={visibleAssets}
+          currency={currency}
+          onSetCurrency={setCurrency}
+          onAddAccount={() => setShowAddAccount(true)}
+          onDeleteAccount={(id) => run(() => deleteAccount(id), 'Cuenta eliminada')}
+          onOpenHistory={() => setShowAuditLog(true)}
+          onSignOut={signOut}
+          onBack={() => goto('resumen')}
+          onToast={setToast}
+        />
+      )}
+
+      <TabBar current={screen} onChange={goto} onNew={() => openNew('expense')} />
+
+      <Toast message={toast} onDone={clearToast} />
+
+      {sheetType && (
+        <MovementSheet
+          initialType={sheetType}
+          accounts={accounts}
+          categories={categories}
+          cashByAccount={cashByAccount}
+          usdArs={usdArs}
+          spentByCategory={monthSummary.byCategory}
+          onClose={() => setSheetType(null)}
+          onSaved={(msg) => {
+            setSheetType(null);
+            setToast(`✓ ${msg}`);
+            bump();
+            reload();
+          }}
+        />
+      )}
+
+      {selectedMovement && (
+        <ActionSheet
+          message={(() => {
+            const d = describeMovement(selectedMovement, categories, accounts);
+            return `${d.title} · ${formatAmount(selectedMovement.amount, selectedMovement.currency)}\n${d.sub}`;
+          })()}
+          actions={[
+            {
+              label: 'Deshacer movimiento',
+              danger: true,
+              onSelect: () =>
+                run(async () => {
+                  await movementActions.remove(selectedMovement.id);
+                  bump();
+                  await reload();
+                }, 'Movimiento deshecho'),
+            },
+          ]}
+          onClose={() => setSelectedMovement(null)}
+        />
+      )}
 
       {showAddAccount && (
-        <AddAccountModal onClose={() => setShowAddAccount(false)} onCreate={handleCreateAccount} />
+        <AddAccountModal
+          onClose={() => setShowAddAccount(false)}
+          onCreate={async (data) => {
+            if (await run(() => createAccount(data), `Cuenta "${data.name}" creada`)) setShowAddAccount(false);
+          }}
+        />
       )}
-      {selectedAssetId &&
-        (() => {
-          const selected = displayAssets.find((a) => a.id === selectedAssetId);
-          return selected ? (
-            <AssetDetailModal
-              asset={selected}
-              accounts={accounts}
-              currency={currency}
-              usdArs={usdArs}
-              onClose={() => setSelectedAssetId(null)}
-              onDelete={handleDeleteAsset}
-            />
-          ) : null;
-        })()}
+      {selectedAsset && (
+        <AssetDetailSheet
+          asset={selectedAsset}
+          account={accounts.find((a) => a.id === selectedAsset.accountId)}
+          usdArs={usdArs}
+          onClose={() => {
+            setSelectedAssetId(null);
+            setTradeMode(null);
+          }}
+          onTrade={setTradeMode}
+          onDelete={async (id) => {
+            if (await run(() => deleteAsset(id), 'Activo eliminado')) setSelectedAssetId(null);
+          }}
+        />
+      )}
+      {selectedAsset && tradeMode && (
+        <TradeSheet
+          asset={selectedAsset}
+          account={accounts.find((a) => a.id === selectedAsset.accountId)}
+          mode={tradeMode}
+          onClose={() => setTradeMode(null)}
+          onSubmit={(payload) =>
+            run(() => addAsset(payload), payload.type === 'sell' || payload.type === 'fund_withdraw' ? 'Venta registrada' : 'Compra registrada')
+          }
+        />
+      )}
       {showAuditLog && <AuditLogModal onClose={() => setShowAuditLog(false)} />}
       {showAddAsset && (
-        <AddAssetPanel
-          assets={displayAssets}
+        <AddAssetSheet
           accounts={accounts}
+          assets={displayAssets}
           initialAccountId={addAssetAccountId}
+          usdArs={usdArs}
           onClose={() => {
             setShowAddAsset(false);
             setAddAssetAccountId(null);
           }}
-          onSubmit={handleAddAssetSubmit}
+          onSubmit={(payload) => run(() => addAsset(payload), payload.type === 'fund_topup' ? 'Depósito registrado' : 'Activo agregado')}
         />
       )}
     </div>

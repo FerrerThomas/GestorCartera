@@ -33,3 +33,13 @@ Thumbs.db
 .claude/
 .agents/
 skills-lock.json
+
+# Skills / herramientas de agentes de IA (setup local, no son parte de la app)
+agent/
+caveman-install.sh
+
+# Supabase: migraciones (se corren a mano en el SQL Editor) y archivos locales del CLI
+supabase/migrations/
+supabase/schema.sql
+supabase/.temp/
+supabase/.branches/

@@ -5,13 +5,14 @@ import LoginPage from './components/LoginPage.jsx';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import './index.css';
 import './App.css';
+import './styles/glass.css';
 
 function AuthGate() {
   const { user, loading } = useAuth();
   if (loading) {
     return (
       <div className="auth-shell">
-        <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>Cargando…</span>
+        <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 15 }}>Cargando…</span>
       </div>
     );
   }
@@ -25,3 +26,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </AuthProvider>
   </React.StrictMode>
 );
+
+// PWA: solo en producción (en dev el SW cachearía los módulos de Vite).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
