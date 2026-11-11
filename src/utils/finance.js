@@ -102,3 +102,17 @@ export function todayISODate() {
   const dd = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
+
+// Monto exacto (hasta 2 decimales) para movimientos: $12.500,5 / US$40.
+export function formatAmount(value, currency) {
+  const n = Number(value).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  return (currency === 'USD' ? 'US$' : '$') + n;
+}
+
+// Montos grandes compactos para espacios chicos: $38,9 M / US$4.150.
+export function formatCompact(value, currency) {
+  const prefix = currency === 'USD' ? 'US$' : '$';
+  const abs = Math.abs(value);
+  if (abs >= 1e6) return prefix + (value / 1e6).toLocaleString('es-AR', { maximumFractionDigits: abs >= 1e8 ? 0 : 1 }) + ' M';
+  return prefix + Math.round(value).toLocaleString('es-AR');
+}
