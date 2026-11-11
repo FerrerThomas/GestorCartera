@@ -8,9 +8,17 @@ export const TABS = [
   { id: 'cartera', label: 'Cartera', icon: 'chart' },
 ];
 
-export function TabBar({ current, onChange, onNew }) {
+export function TabBar({ current, onChange, onNew, userEmail }) {
   return (
     <div className="tabbar-wrap">
+      <div className="side-brand" aria-hidden="true">
+        <span className="side-brand-mark">
+          <i style={{ height: 7 }} />
+          <i style={{ height: 11 }} />
+          <i style={{ height: 15 }} />
+        </span>
+        Mi Cartera
+      </div>
       <nav aria-label="Secciones" className="tabbar glass">
         {TABS.map((t) => (
           <button
@@ -28,6 +36,20 @@ export function TabBar({ current, onChange, onNew }) {
       <button type="button" className="fab glass tint" aria-label="Nuevo movimiento" onClick={onNew}>
         <Icon name="plus" size={28} stroke={2.4} />
         <span className="fab-label">Nuevo movimiento</span>
+      </button>
+      <button
+        type="button"
+        className="side-footer tab"
+        aria-current={current === 'ajustes' ? 'page' : undefined}
+        onClick={() => onChange('ajustes')}
+      >
+        <span className="side-avatar" aria-hidden="true">
+          {String(userEmail ?? '?')[0].toUpperCase()}
+        </span>
+        <span className="side-footer-text">
+          <span>Ajustes</span>
+          <small>{userEmail}</small>
+        </span>
       </button>
     </div>
   );

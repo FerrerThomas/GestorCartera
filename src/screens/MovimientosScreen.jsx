@@ -99,7 +99,7 @@ export default function MovimientosScreen({
         />
       </section>
 
-      <div className="content">
+      <div className="content days-cols">
         {missingMigration && <MigrationBanner />}
         {!missingMigration && !loading && days.length === 0 && (
           <div className="card empty">

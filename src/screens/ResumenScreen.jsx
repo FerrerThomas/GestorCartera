@@ -1,8 +1,26 @@
 import { useMemo } from 'react';
-import Icon, { accountColor, accountTypeLabel, categoryStyle } from '../components/glass/Icon.jsx';
-import { MigrationBanner, Segmented, Sparkline } from '../components/glass/ui.jsx';
+import Icon, { CategoryDot, accountColor, accountTypeLabel, categoryStyle } from '../components/glass/Icon.jsx';
+import { MigrationBanner, Segmented, Sparkline, dayLabel } from '../components/glass/ui.jsx';
 import { currentMonthKey, monthLabel, monthProgress } from '../hooks/useMovements.js';
-import { formatMoney, formatPct } from '../utils/finance.js';
+import { assetValueARS, formatAmount, formatMoney, formatPct } from '../utils/finance.js';
+import { describeMovement } from './MovimientosScreen.jsx';
+
+const DIST_COLORS = {
+  CEDEAR: '#0071E3',
+  Acción: '#5856D6',
+  Cripto: '#E0A100',
+  'Fondo money market': '#34C759',
+  Efectivo: '#30B0C7',
+  'Skin CS2': '#AF52DE',
+};
+const DIST_LABEL = {
+  CEDEAR: 'CEDEARs',
+  Acción: 'Acciones',
+  Cripto: 'Cripto',
+  'Fondo money market': 'Billeteras',
+  Efectivo: 'Efectivo',
+  'Skin CS2': 'Skins CS2',
+};
 
 function initials(email) {
   const name = String(email ?? '').split('@')[0];
@@ -21,6 +39,7 @@ export default function ResumenScreen({
   assets,
   accountBalances,
   month,
+  recentMovements = [],
   categories,
   missingMigration,
   onNew,
@@ -64,6 +83,15 @@ export default function ResumenScreen({
   const barBase = Math.max(cap, month.expenses, 1);
 
   const assetCount = (accId) => assets.filter((a) => a.accountId === accId).length;
+
+  const distribution = useMemo(() => {
+    const by = {};
+    for (const a of assets) by[a.category] = (by[a.category] ?? 0) + assetValueARS(a, usdArs);
+    const total = Object.values(by).reduce((x, y) => x + y, 0) || 1;
+    return Object.entries(by)
+      .map(([cat, v]) => ({ cat, v, pct: (v / total) * 100 }))
+      .sort((a, b) => b.v - a.v);
+  }, [assets, usdArs]);
 
   return (
     <div className="screen">
@@ -116,14 +144,13 @@ export default function ResumenScreen({
         </nav>
       </section>
 
-      <div className="content two-col">
-        {missingMigration && (
-          <div className="span-all">
-            <MigrationBanner />
-          </div>
-        )}
-
-        <button type="button" className="card" onClick={() => onGoto('presupuesto')} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {missingMigration && (
+        <div className="content" style={{ paddingBottom: 0 }}>
+          <MigrationBanner />
+        </div>
+      )}
+      <div className="content dash">
+        <button type="button" className="card area-month" onClick={() => onGoto('presupuesto')} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <span style={{ fontSize: 17, fontWeight: 600 }}>{monthLabel(currentMonthKey())}</span>
             <span style={{ fontSize: 15, color: 'var(--label-2)' }}>
@@ -161,7 +188,7 @@ export default function ResumenScreen({
           </div>
         </button>
 
-        <section aria-labelledby="h-cuentas" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <section className="area-accounts" aria-labelledby="h-cuentas" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <h2 id="h-cuentas" className="section-title">
             Cuentas
           </h2>
@@ -194,6 +221,75 @@ export default function ResumenScreen({
               ))}
             </ul>
           )}
+        </section>
+
+        <section className="area-recent desk-only" aria-labelledby="h-recent">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '4px 6px 8px' }}>
+            <h2 id="h-recent" className="section-title" style={{ margin: 0 }}>
+              Últimos movimientos
+            </h2>
+            <button type="button" className="capsule-btn plain" style={{ minHeight: 32, padding: '0 12px', fontSize: 14 }} onClick={() => onGoto('movimientos')}>
+              Ver todos
+            </button>
+          </div>
+          {recentMovements.length === 0 ? (
+            <div className="card empty">Todavía no hay movimientos este mes.</div>
+          ) : (
+            <ul className="list">
+              {recentMovements.map((m) => {
+                const d = describeMovement(m, categories, accounts);
+                return (
+                  <li key={m.id}>
+                    <div className="row">
+                      {m.type === 'transfer' ? (
+                        <span className="dot-icon sm" aria-hidden="true" style={{ background: '#8E8E93' }}>
+                          <Icon name="swap" size={16} stroke={2.2} />
+                        </span>
+                      ) : (
+                        <CategoryDot category={d.cat} size={32} />
+                      )}
+                      <span className="row-body">
+                        <span className="row-main">
+                          <span className="row-title" style={{ fontSize: 15 }}>{d.title}</span>
+                          <span className="row-sub">{dayLabel(m.occurred_on)} · {d.sub}</span>
+                        </span>
+                        <span
+                          className={`row-value ${m.type === 'income' ? 'amount-in' : m.type === 'transfer' ? 'amount-move' : ''}`}
+                          style={{ fontSize: 15, fontWeight: 500 }}
+                        >
+                          {m.type === 'income' ? '+' : m.type === 'expense' ? '−' : ''}
+                          {formatAmount(m.amount, m.currency)}
+                        </span>
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section className="card area-dist desk-only" aria-labelledby="h-dist" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <h2 id="h-dist" style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>
+            Distribución
+          </h2>
+          <div className="stack-bar" aria-hidden="true" style={{ height: 12, borderRadius: 6 }}>
+            {distribution.map((d) => (
+              <span key={d.cat} style={{ width: `${d.pct}%`, background: DIST_COLORS[d.cat] ?? '#8E8E93' }} />
+            ))}
+          </div>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
+            {distribution.map((d) => (
+              <li key={d.cat} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 15 }}>
+                <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: DIST_COLORS[d.cat] ?? '#8E8E93', flex: 'none' }} />
+                <span style={{ flex: 1 }}>{DIST_LABEL[d.cat] ?? d.cat}</span>
+                <span className="num" style={{ color: 'var(--label-2)' }}>{fmt(d.v)}</span>
+                <span className="num" style={{ width: 52, textAlign: 'right', fontWeight: 600 }}>
+                  {d.pct.toFixed(0)}%
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       </div>
     </div>

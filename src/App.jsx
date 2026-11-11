@@ -178,7 +178,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="auth-shell">
-        <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 15 }}>Cargando tu patrimonio…</span>
+        <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 15 }}>Cargando tu cartera…</span>
       </div>
     );
   }
@@ -199,6 +199,7 @@ export default function App() {
           assets={visibleAssets}
           accountBalances={accountBalances}
           month={monthSummary}
+          recentMovements={current.movements.slice(0, 7)}
           categories={categories}
           missingMigration={missingMigration}
           onNew={openNew}
@@ -265,7 +266,7 @@ export default function App() {
         />
       )}
 
-      <TabBar current={screen} onChange={goto} onNew={() => openNew('expense')} />
+      <TabBar current={screen} onChange={goto} onNew={() => openNew('expense')} userEmail={user.email} />
 
       <Toast message={toast} onDone={clearToast} />
 
