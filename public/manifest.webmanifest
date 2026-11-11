@@ -1,6 +1,6 @@
 {
-  "name": "Mi Patrimonio",
-  "short_name": "Patrimonio",
+  "name": "Mi Cartera",
+  "short_name": "Mi Cartera",
   "description": "Tus inversiones, cuentas y gastos en un solo lugar.",
   "lang": "es-AR",
   "start_url": "/?source=pwa",

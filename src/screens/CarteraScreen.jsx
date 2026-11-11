@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import AssetIcon from '../components/AssetIcon.jsx';
 import Icon from '../components/glass/Icon.jsx';
 import { Segmented, Sparkline } from '../components/glass/ui.jsx';
+import { formatPrice, nativeCurrency } from '../components/glass/AssetDetailSheet.jsx';
 import {
   assetGainARS,
   assetGainPct,
@@ -185,6 +186,14 @@ export default function CarteraScreen({
             </div>
           </div>
         ) : (
+          <>
+          <div className="holdings-head desk-only" aria-hidden="true">
+            <span>Activo</span>
+            <span className="col">Cantidad</span>
+            <span className="col optional">Precio promedio</span>
+            <span className="col optional">Precio actual</span>
+            <span className="col" style={{ width: 150 }}>Valor</span>
+          </div>
           <ul className="list">
             {rows.map((a) => {
               const pct = assetGainPct(a, usdArs);
@@ -201,7 +210,20 @@ export default function CarteraScreen({
                         <span className="row-title strong">{a.ticker}</span>
                         <span className="row-sub">{sub}</span>
                       </span>
-                      <span className="row-values">
+                      {a.kind !== 'fund' ? (
+                        <>
+                          <span className="col desk-only">{formatQty(a.qty ?? 0)}</span>
+                          <span className="col optional desk-only">{formatPrice(a.avgPrice ?? 0, nativeCurrency(a))}</span>
+                          <span className="col optional desk-only">{formatPrice(a.currentPrice ?? 0, nativeCurrency(a))}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="col desk-only">—</span>
+                          <span className="col optional desk-only">TNA {String(a.tna ?? 0).replace('.', ',')}%</span>
+                          <span className="col optional desk-only">—</span>
+                        </>
+                      )}
+                      <span className="row-values val-col">
                         <span className="row-value">{formatMoney(conv(assetValueARS(a, usdArs)), currency)}</span>
                         <span className={`pill ${Math.abs(pct) < 0.05 ? 'flat' : pct > 0 ? 'up' : 'down'}`}>{formatPct(pct)}</span>
                       </span>
@@ -211,6 +233,7 @@ export default function CarteraScreen({
               );
             })}
           </ul>
+          </>
         )}
       </div>
     </div>

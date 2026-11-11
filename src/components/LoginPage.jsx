@@ -40,8 +40,8 @@ export default function LoginPage() {
       <div className="modal-card" style={{ width: 400, maxWidth: 'calc(100vw - 48px)' }}>
         <div className="modal-head" style={{ justifyContent: 'center', flexDirection: 'column', gap: 4 }}>
           <div className="brand" style={{ marginBottom: 4 }}>
-            <div className="brand-mark">P</div>
-            <div className="brand-name">Patrimonio</div>
+            <div className="brand-mark">C</div>
+            <div className="brand-name">Mi Cartera</div>
           </div>
           <div className="modal-step">
             {mode === 'signin' ? 'Iniciá sesión para continuar' : 'Creá tu cuenta'}
