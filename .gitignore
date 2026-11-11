@@ -40,5 +40,6 @@ caveman-install.sh
 
 # Supabase: migraciones (se corren a mano en el SQL Editor) y archivos locales del CLI
 supabase/migrations/
+supabase/schema.sql
 supabase/.temp/
 supabase/.branches/
