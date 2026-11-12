@@ -32,7 +32,7 @@ function loadCatalog(key) {
 
 const toInput = (n) => (n ? String(Number(Number(n).toFixed(6))).replace('.', ',') : '');
 
-export default function AddAssetSheet({ accounts, assets, initialAccountId, usdArs, onClose, onSubmit }) {
+export default function AddAssetSheet({ accounts, assets, initialAccountId, usdArs, quoteFor = () => ({ mode: 'manual' }), onClose, onSubmit }) {
   const usable = accounts;
   const [accountId, setAccountId] = useState(initialAccountId ?? usable.find((a) => a.type === 'broker')?.id ?? usable[0]?.id ?? '');
   const account = accounts.find((a) => a.id === accountId);
@@ -118,7 +118,10 @@ export default function AddAssetSheet({ accounts, assets, initialAccountId, usdA
   const q = parseLocaleNumber(qty);
   const p = type === 'efectivo' ? cashPrice : parseLocaleNumber(price);
   const isFund = type === 'billetera';
-  const valid = isFund ? q > 0 && !!date : !!ticker && q > 0 && p > 0 && !!date && date <= todayISODate();
+  const yq = isFund ? quoteFor(accountId) : { mode: 'manual' };
+  const byUnits = isFund && yq.mode === 'fci';
+  const autoTna = isFund && (yq.mode === 'fci' || yq.mode === 'api');
+  const valid = isFund ? q > 0 && !!date && (!byUnits || yq.vcp > 0) : !!ticker && q > 0 && p > 0 && !!date && date <= todayISODate();
 
   const submit = async (e) => {
     e?.preventDefault();
@@ -126,7 +129,16 @@ export default function AddAssetSheet({ accounts, assets, initialAccountId, usdA
     setBusy(true);
     let payload;
     if (isFund) {
-      payload = { type: 'fund_topup', accountId, amount: q, tna: parseLocaleNumber(tna), existingAssetId: existingFund?.id ?? null, occurredOn: date };
+      payload = {
+        type: 'fund_topup',
+        accountId,
+        amount: q,
+        tna: autoTna ? yq.tna ?? 0 : parseLocaleNumber(tna),
+        existingAssetId: existingFund?.id ?? null,
+        occurredOn: date,
+        // Billetera vinculada a un FCI: el depósito compra cuotapartes.
+        ...(byUnits && (!existingFund || existingFund.units != null) ? { vcp: yq.vcp, vcpDate: yq.vcpDate } : {}),
+      };
     } else if (existing) {
       payload = { type: 'existing', assetId: existing.id, qty: q, price: p, occurredOn: date };
     } else {
@@ -296,7 +308,7 @@ export default function AddAssetSheet({ accounts, assets, initialAccountId, usdA
                     </label>
                   </li>
                 )}
-                {isFund && (
+                {isFund && !autoTna && (
                   <li>
                     <label className="form-row">
                       <span>TNA %</span>
@@ -311,6 +323,7 @@ export default function AddAssetSheet({ accounts, assets, initialAccountId, usdA
                   </label>
                 </li>
               </ul>
+              {isFund && autoTna && <FundNote yq={yq} />}
               {needsCatalog && (
                 <p className="footnote" style={{ margin: '8px 24px 0' }}>
                   Precio por unidad en {assetCurrency === 'USD' ? 'dólares' : 'pesos'}, cargado con la cotización actual.
@@ -341,5 +354,25 @@ export default function AddAssetSheet({ accounts, assets, initialAccountId, usdA
         </div>
       </form>
     </div>
+  );
+}
+
+const pct = (t) => (t == null ? '—' : t.toFixed(1).replace('.', ',') + '%');
+const ddmm = (iso) => String(iso ?? '').split('-').reverse().join('/');
+
+function FundNote({ yq }) {
+  let text;
+  if (yq.mode === 'fci') {
+    text = yq.vcp
+      ? 'Rinde como ' + yq.fund + ': el depósito compra cuotapartes a ' + formatMoney(yq.vcp, 'ARS') +
+        ' (valor al ' + ddmm(yq.vcpDate) + ') · TNA ' + pct(yq.tna) + '.'
+      : 'Cargando el valor de la cuotaparte del fondo…';
+  } else {
+    text = 'TNA automática ' + pct(yq.tna) + ' (tasa publicada por ' + yq.entity + ').';
+  }
+  return (
+    <p className="footnote" style={{ margin: '8px 24px 0' }}>
+      {text}
+    </p>
   );
 }

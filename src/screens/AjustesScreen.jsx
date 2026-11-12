@@ -2,6 +2,9 @@ import { useState } from 'react';
 import Icon, { accountColor, accountTypeLabel } from '../components/glass/Icon.jsx';
 import { ActionSheet, MigrationBanner, Segmented } from '../components/glass/ui.jsx';
 import { useApiTokens } from '../hooks/useMovements.js';
+import YieldSheet from '../components/glass/YieldSheet.jsx';
+import AccountIcon from '../components/glass/AccountIcon.jsx';
+import { fmtTna } from '../components/glass/AddAccountSheet.jsx';
 
 const ENDPOINT = `${import.meta.env.VITE_SUPABASE_URL ?? ''}/functions/v1/quick-action`;
 
@@ -33,6 +36,10 @@ export default function AjustesScreen({
   onSetCurrency,
   onAddAccount,
   onDeleteAccount,
+  funds = [],
+  fciQuotes = {},
+  walletRates = {},
+  onSetYield,
   onOpenHistory,
   onSignOut,
   onBack,
@@ -42,6 +49,18 @@ export default function AjustesScreen({
   const [newToken, setNewToken] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [yieldAccount, setYieldAccount] = useState(null);
+
+  // Descripción corta de cómo rinde una billetera.
+  const yieldText = (acc) => {
+    if (acc.fund_fci) {
+      const q = fciQuotes[acc.fund_fci];
+      return `${acc.fund_fci.replace(/ - Clase .*/, '')} · ${q ? fmtTna(q.tna) : '…'}`;
+    }
+    if (acc.fund_api) return `Tasa ${acc.fund_api} · ${fmtTna(walletRates[acc.fund_api] ?? null)}`;
+    const f = funds.find((x) => x.accountId === acc.id);
+    return `TNA manual · ${fmtTna(f?.tna ?? null)}`;
+  };
 
   const generate = async () => {
     setBusy(true);
@@ -169,16 +188,33 @@ export default function AjustesScreen({
               return (
                 <li key={acc.id}>
                   <div className="row">
-                    <span className="dot-icon sm" aria-hidden="true" style={{ background: accountColor(acc) }}>
-                      {acc.name[0]?.toUpperCase()}
-                    </span>
+                    <AccountIcon account={acc} size={32} />
                     <span className="row-body">
                       <span className="row-main">
                         <span className="row-title">{acc.name}</span>
                         <span className="row-sub">
-                          {accountTypeLabel(acc)} · {acc.currency} · {n} activo{n === 1 ? '' : 's'}
+                          {acc.type === 'billetera' ? (
+                            <>
+                              {(acc.fund_fci || acc.fund_api) && <span className="yield-badge">Auto</span>}
+                              {yieldText(acc)}
+                            </>
+                          ) : (
+                            <>
+                              {accountTypeLabel(acc)} · {acc.currency} · {n} activo{n === 1 ? '' : 's'}
+                            </>
+                          )}
                         </span>
                       </span>
+                      {acc.type === 'billetera' && (
+                        <button
+                          type="button"
+                          className="capsule-btn plain"
+                          style={{ minHeight: 32, padding: '0 12px', fontSize: 14 }}
+                          onClick={() => setYieldAccount(acc)}
+                        >
+                          Rendimiento
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="icon-btn"
@@ -254,6 +290,16 @@ export default function AjustesScreen({
         </section>
       </div>
 
+      {yieldAccount && (
+        <YieldSheet
+          account={yieldAccount}
+          fund={funds.find((f) => f.accountId === yieldAccount.id)}
+          fciQuotes={fciQuotes}
+          walletRates={walletRates}
+          onClose={() => setYieldAccount(null)}
+          onSave={(cfg) => onSetYield(yieldAccount.id, cfg)}
+        />
+      )}
       {confirm && (
         <ActionSheet
           message={confirm.message}

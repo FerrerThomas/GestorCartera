@@ -41,7 +41,7 @@ async function sha256Hex(text: string): Promise<string> {
 function norm(s: unknown): string {
   return String(s ?? "")
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^\p{L}\p{N} ]/gu, "")
     .trim()
     .toLowerCase();

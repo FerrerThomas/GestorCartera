@@ -4,6 +4,7 @@ import { MigrationBanner, Segmented, Sparkline, dayLabel } from '../components/g
 import { currentMonthKey, monthLabel, monthProgress } from '../hooks/useMovements.js';
 import { assetValueARS, formatAmount, formatMoney, formatPct } from '../utils/finance.js';
 import { describeMovement } from './MovimientosScreen.jsx';
+import AccountIcon from '../components/glass/AccountIcon.jsx';
 
 const DIST_COLORS = {
   CEDEAR: '#0071E3',
@@ -204,9 +205,7 @@ export default function ResumenScreen({
               {accounts.map((acc) => (
                 <li key={acc.id}>
                   <button type="button" className="row" onClick={() => onGoto('cartera', { accountId: acc.id })}>
-                    <span className="dot-icon" aria-hidden="true" style={{ background: accountColor(acc), width: 36, height: 36 }}>
-                      {acc.name[0]?.toUpperCase()}
-                    </span>
+                    <AccountIcon account={acc} size={36} />
                     <span className="row-body">
                       <span className="row-main">
                         <span className="row-title">{acc.name}</span>

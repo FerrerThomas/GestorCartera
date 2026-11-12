@@ -69,6 +69,25 @@ function mapAsset(row) {
     ...icon,
   };
 
+  if (row.kind === 'fund' && row.fund_units != null && Number(row.fund_vcp) > 0) {
+    // Billetera vinculada a un FCI: vale cuotapartes × valor de la cuotaparte.
+    const principal = Number(row.fund_value);
+    const units = Number(row.fund_units);
+    const vcp = Number(row.fund_vcp);
+    const value = units * vcp;
+    return {
+      ...base,
+      kind: 'fund',
+      value,
+      gainAbs: value - principal,
+      principal,
+      tna: Number(row.fund_tna ?? 0),
+      units,
+      vcp,
+      vcpDate: row.fund_vcp_date ?? null,
+    };
+  }
+
   if (row.kind === 'fund') {
     const tna = Number(row.fund_tna ?? 0);
     const principal = Number(row.fund_value);
@@ -78,6 +97,8 @@ function mapAsset(row) {
       kind: 'fund',
       value: principal + accrued,
       gainAbs: accrued,
+      principal,
+      units: null,
       tna,
     };
   }
@@ -135,7 +156,14 @@ export function usePortfolio(user) {
     async (data) => {
       const { data: row, error: err } = await supabase
         .from('accounts')
-        .insert({ user_id: user.id, name: data.name, type: data.type, currency: data.currency })
+        .insert({
+          user_id: user.id,
+          name: data.name,
+          type: data.type,
+          currency: data.currency,
+          ...(data.fundFci ? { fund_fci: data.fundFci } : {}),
+          ...(data.fundApi ? { fund_api: data.fundApi } : {}),
+        })
         .select()
         .single();
       if (err) throw err;
@@ -185,17 +213,25 @@ export function usePortfolio(user) {
           // possibly-stale client state, so consecutive top-ups always add correctly.
           const { data: current, error: readErr } = await supabase
             .from('assets')
-            .select('fund_value')
+            .select('fund_value, fund_units, fund_vcp')
             .eq('id', fundAssetId)
             .single();
           if (readErr) throw readErr;
-          const { error: err } = await supabase
-            .from('assets')
-            .update({
-              fund_value: Number(current?.fund_value ?? 0) + payload.amount,
-              fund_tna: payload.tna,
-            })
-            .eq('id', fundAssetId);
+          const update = { fund_value: Number(current?.fund_value ?? 0) + payload.amount };
+          if (current?.fund_units != null) {
+            // Por cuotapartes: compra cuotapartes al valor del día.
+            const vcp = payload.vcp ?? Number(current.fund_vcp);
+            if (!(vcp > 0)) throw new Error('No hay valor de cuotaparte para registrar el depósito.');
+            update.fund_units = Number(current.fund_units) + payload.amount / vcp;
+            if (payload.vcp) {
+              update.fund_vcp = payload.vcp;
+              update.fund_vcp_date = payload.vcpDate ?? null;
+            }
+            if (payload.tna != null) update.fund_tna = payload.tna;
+          } else {
+            update.fund_tna = payload.tna;
+          }
+          const { error: err } = await supabase.from('assets').update(update).eq('id', fundAssetId);
           if (err) throw err;
         } else {
           const { data: fundRow, error: err } = await supabase
@@ -210,7 +246,14 @@ export function usePortfolio(user) {
               kind: 'fund',
               fund_value: payload.amount,
               fund_gain_abs: 0,
-              fund_tna: payload.tna,
+              fund_tna: payload.tna ?? 0,
+              ...(payload.vcp
+                ? {
+                    fund_units: payload.amount / payload.vcp,
+                    fund_vcp: payload.vcp,
+                    fund_vcp_date: payload.vcpDate ?? null,
+                  }
+                : {}),
             })
             .select()
             .single();
@@ -237,14 +280,22 @@ export function usePortfolio(user) {
         // ledger (misma lectura fresca anti-stale que el depósito).
         const { data: current, error: readErr } = await supabase
           .from('assets')
-          .select('fund_value')
+          .select('fund_value, fund_units, fund_vcp')
           .eq('id', payload.assetId)
           .single();
         if (readErr) throw readErr;
-        const { error: err } = await supabase
-          .from('assets')
-          .update({ fund_value: Number(current?.fund_value ?? 0) - payload.amount })
-          .eq('id', payload.assetId);
+        const update = { fund_value: Number(current?.fund_value ?? 0) - payload.amount };
+        if (current?.fund_units != null) {
+          // Rescate: vende cuotapartes al valor del día.
+          const vcp = payload.vcp ?? Number(current.fund_vcp);
+          if (!(vcp > 0)) throw new Error('No hay valor de cuotaparte para registrar el retiro.');
+          update.fund_units = Math.max(0, Number(current.fund_units) - payload.amount / vcp);
+          if (payload.vcp) {
+            update.fund_vcp = payload.vcp;
+            update.fund_vcp_date = payload.vcpDate ?? null;
+          }
+        }
+        const { error: err } = await supabase.from('assets').update(update).eq('id', payload.assetId);
         if (err) throw err;
         const { error: histErr } = await supabase.from('asset_history').insert({
           asset_id: payload.assetId,
@@ -327,9 +378,44 @@ export function usePortfolio(user) {
     [user, accounts, assets, reload]
   );
 
+  // Vincula una billetera a un FCI (cuotapartes), a una tasa publicada o a
+  // TNA manual. Al pasar a cuotapartes se convierte el saldo actual al valor
+  // de la cuotaparte de hoy, así el saldo y la ganancia no saltan.
+  const setAccountYield = useCallback(
+    async (accountId, { fci = null, api = null, vcp = null, vcpDate = null, tna = null, currentValue = null }) => {
+      const { error: accErr } = await supabase
+        .from('accounts')
+        .update({ fund_fci: fci, fund_api: api })
+        .eq('id', accountId);
+      if (accErr) throw accErr;
+      const fund = assets.find((a) => a.accountId === accountId && a.kind === 'fund');
+      if (fund) {
+        let update;
+        if (fci) {
+          if (!(vcp > 0)) throw new Error('No se pudo obtener el valor de la cuotaparte de ese fondo.');
+          update = {
+            fund_units: (currentValue ?? fund.value) / vcp,
+            fund_vcp: vcp,
+            fund_vcp_date: vcpDate,
+            ...(tna != null ? { fund_tna: tna } : {}),
+          };
+        } else {
+          update = { fund_units: null, fund_vcp: null, fund_vcp_date: null, ...(tna != null ? { fund_tna: tna } : {}) };
+        }
+        const { error } = await supabase.from('assets').update(update).eq('id', fund.id);
+        if (error) throw error;
+      }
+      const name = accounts.find((a) => a.id === accountId)?.name ?? accountId;
+      logEvent(user.id, 'account_yield', `Rendimiento de ${name}: ${fci ?? (api ? `tasa ${api}` : 'TNA manual')}`);
+      await reload();
+    },
+    [user, accounts, assets, reload]
+  );
+
   return {
     accounts,
     assets,
+    setAccountYield,
     setAssets,
     reload,
     loading,
