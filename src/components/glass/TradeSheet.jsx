@@ -9,10 +9,14 @@ const CONFIRM = { buy: 'Confirmar compra', sell: 'Confirmar venta', deposit: 'Co
 const toInput = (n) => (n ? String(Number(n.toFixed(6))).replace('.', ',') : '');
 
 // Compra/venta de un activo que ya tenés, o depósito/retiro de una billetera.
-export default function TradeSheet({ asset, account, mode, onClose, onSubmit }) {
+export default function TradeSheet({ asset, account, mode, quote = { mode: 'manual' }, onClose, onSubmit }) {
   const cur = nativeCurrency(asset);
   const isFund = asset.kind === 'fund';
   const isCash = asset.category === 'Efectivo';
+  const byUnits = isFund && asset.units != null;
+  const vcp = byUnits ? (quote.vcp ?? asset.vcp) : null;
+  const vcpDate = byUnits ? (quote.vcp ? quote.vcpDate : asset.vcpDate) : null;
+  const autoTna = isFund && (quote.mode === 'fci' || quote.mode === 'api');
   const fixedPrice = isCash ? (asset.ticker === 'ARS' ? 1 : asset.currentPrice ?? 0) : null;
 
   const [qty, setQty] = useState('');
@@ -32,7 +36,7 @@ export default function TradeSheet({ asset, account, mode, onClose, onSubmit }) 
   const have = isFund ? asset.value : asset.qty ?? 0;
   const selling = mode === 'sell' || mode === 'withdraw';
   const tooMuch = selling && q > have + 1e-9;
-  const valid = q > 0 && (isFund || p > 0) && !tooMuch && !!date && date <= todayISODate();
+  const valid = q > 0 && (isFund || p > 0) && (!byUnits || vcp > 0) && !tooMuch && !!date && date <= todayISODate();
 
   const submit = async (e) => {
     e?.preventDefault();
@@ -42,8 +46,24 @@ export default function TradeSheet({ asset, account, mode, onClose, onSubmit }) 
     if (mode === 'buy') payload = { type: 'existing', assetId: asset.id, qty: q, price: p, occurredOn: date };
     else if (mode === 'sell') payload = { type: 'sell', assetId: asset.id, qty: q, price: p, occurredOn: date };
     else if (mode === 'deposit')
-      payload = { type: 'fund_topup', accountId: asset.accountId, amount: q, tna: parseLocaleNumber(tna), existingAssetId: asset.id, occurredOn: date };
-    else payload = { type: 'fund_withdraw', accountId: asset.accountId, assetId: asset.id, amount: q, occurredOn: date };
+      payload = {
+        type: 'fund_topup',
+        accountId: asset.accountId,
+        amount: q,
+        tna: autoTna ? quote.tna ?? asset.tna : parseLocaleNumber(tna),
+        existingAssetId: asset.id,
+        occurredOn: date,
+        ...(byUnits ? { vcp, vcpDate } : {}),
+      };
+    else
+      payload = {
+        type: 'fund_withdraw',
+        accountId: asset.accountId,
+        assetId: asset.id,
+        amount: q,
+        occurredOn: date,
+        ...(byUnits ? { vcp, vcpDate } : {}),
+      };
     const ok = await onSubmit(payload);
     if (ok) onClose();
     else setBusy(false);
@@ -53,6 +73,8 @@ export default function TradeSheet({ asset, account, mode, onClose, onSubmit }) 
   const preview = [];
   if (isFund) {
     preview.push([mode === 'deposit' ? 'Saldo nuevo' : 'Saldo restante', formatMoney(have + (mode === 'deposit' ? q : -q), 'ARS')]);
+    if (byUnits && vcp > 0)
+      preview.push([mode === 'deposit' ? 'Cuotapartes que comprás' : 'Cuotapartes que vendés', formatQty(q / vcp)]);
   } else if (mode === 'buy') {
     const r = calcAveragePrice(asset.qty ?? 0, asset.avgPrice ?? 0, q, p);
     preview.push(['Total', formatMoney(q * p, cur)]);
@@ -131,7 +153,7 @@ export default function TradeSheet({ asset, account, mode, onClose, onSubmit }) 
                 </label>
               </li>
             )}
-            {mode === 'deposit' && (
+            {mode === 'deposit' && !autoTna && (
               <li>
                 <label className="form-row">
                   <span>TNA %</span>

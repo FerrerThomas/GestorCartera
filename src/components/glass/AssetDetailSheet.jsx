@@ -90,7 +90,7 @@ export default function AssetDetailSheet({ asset, account, usdArs, onClose, onTr
             <Icon name="close" size={18} stroke={2.6} />
           </button>
           <h1 id="ad-title" className="sheet-title">
-            {asset.ticker}
+            {isFund ? account?.name ?? 'Billetera' : asset.ticker}
           </h1>
           <button type="button" className="icon-btn glass" aria-label={`Eliminar ${asset.ticker}`} onClick={() => setConfirmDelete(true)} style={{ color: 'var(--red)' }}>
             <Icon name="trash" size={19} />
@@ -101,7 +101,9 @@ export default function AssetDetailSheet({ asset, account, usdArs, onClose, onTr
           <section className="asset-hero" aria-label="Valor actual">
             <AssetIcon asset={asset} accountName={account?.name} size={64} />
             <span style={{ fontSize: 15, color: 'var(--label-2)' }}>
-              {[asset.name !== asset.ticker ? asset.name : null, asset.category, account?.name].filter(Boolean).join(' · ')}
+              {isFund
+                ? ['Billetera', account?.name, asset.yieldSource?.fund?.replace(/ - Clase .*/, '')].filter(Boolean).join(' · ')
+                : [asset.name !== asset.ticker ? asset.name : null, asset.category, account?.name].filter(Boolean).join(' · ')}
             </span>
             <span className="asset-hero-value">{formatMoney(value, cur)}</span>
             <span style={{ fontSize: 15, fontWeight: 600, color: tone(gain) }} className="num">
@@ -115,7 +117,16 @@ export default function AssetDetailSheet({ asset, account, usdArs, onClose, onTr
           </section>
 
           <div className="stat-grid">
-            {isFund ? (
+            {isFund && asset.units != null ? (
+              <>
+                <Stat label="Saldo" value={formatMoney(asset.value, 'ARS')} />
+                <Stat label="TNA del fondo" value={`${(asset.tna ?? 0).toFixed(2).replace('.', ',')}%`} />
+                <Stat label="Cuotapartes" value={formatQty(asset.units)} />
+                <Stat label="Valor cuotaparte" value={'$' + Number(asset.vcp ?? 0).toLocaleString('es-AR', { maximumFractionDigits: 3 })} />
+                <Stat label="Depositado neto" value={formatMoney(invested, 'ARS')} />
+                <Stat label="Interés ganado" value={signed(gain, 'ARS')} tone={tone(gain)} />
+              </>
+            ) : isFund ? (
               <>
                 <Stat label="Saldo" value={formatMoney(asset.value, 'ARS')} />
                 <Stat label="TNA" value={`${String(asset.tna ?? 0).replace('.', ',')}%`} />
@@ -133,6 +144,18 @@ export default function AssetDetailSheet({ asset, account, usdArs, onClose, onTr
               </>
             )}
           </div>
+
+          {isFund && asset.units != null && (
+            <p className="footnote" style={{ margin: '10px 24px 0', textAlign: 'center' }}>
+              Rinde como <strong>{asset.yieldSource?.fund ?? 'el fondo'}</strong>. Valor de cuotaparte al{' '}
+              {String(asset.vcpDate ?? '').split('-').reverse().join('/')} (los fondos publican con unos días de atraso).
+            </p>
+          )}
+          {isFund && asset.units == null && asset.yieldSource?.mode === 'api' && (
+            <p className="footnote" style={{ margin: '10px 24px 0', textAlign: 'center' }}>
+              TNA automática con la tasa que publica {asset.yieldSource.entity}.
+            </p>
+          )}
 
           <div className="sheet-actions">
             <button type="button" className="glass tint" onClick={() => onTrade(isFund ? 'deposit' : 'buy')}>

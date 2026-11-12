@@ -77,6 +77,36 @@ async function fetchCrypto(tickers: string[]): Promise<Record<string, number>> {
   return map;
 }
 
+// Billeteras: valor de cuotaparte de los FCI money market (último y anterior
+// día publicado → TNA implícita) y tasas publicadas por entidad.
+type FciQuote = { vcp: number; fecha: string; tna: number | null };
+async function fetchFci(): Promise<Record<string, FciQuote>> {
+  const base = "https://api.argentinadatos.com/v1/finanzas/fci/mercadoDinero";
+  const [last, prev] = await Promise.all([safeFetchJson(`${base}/ultimo`), safeFetchJson(`${base}/penultimo`)]);
+  const prevBy: Record<string, { vcp: number; fecha: string }> = {};
+  for (const r of (Array.isArray(prev) ? prev : []) as { fondo: string; vcp: number; fecha: string }[]) prevBy[r.fondo] = r;
+  const map: Record<string, FciQuote> = {};
+  for (const r of (Array.isArray(last) ? last : []) as { fondo: string; vcp: number; fecha: string }[]) {
+    const vcp = Number(r.vcp);
+    if (!r.fondo || !(vcp > 0)) continue;
+    const p = prevBy[r.fondo];
+    const days = p ? Math.round((Date.parse(r.fecha) - Date.parse(p.fecha)) / DAY_MS) : 0;
+    const tna = p && days > 0 ? ((vcp / Number(p.vcp) - 1) * 365 * 100) / days : null;
+    map[r.fondo] = { vcp, fecha: r.fecha, tna };
+  }
+  return map;
+}
+
+async function fetchWalletRates(): Promise<Record<string, number>> {
+  const list = await safeFetchJson("https://api.argentinadatos.com/v1/finanzas/rendimientos");
+  const map: Record<string, number> = {};
+  for (const e of (Array.isArray(list) ? list : []) as { entidad: string; rendimientos?: { moneda: string; apy: number }[] }[]) {
+    const ars = e.rendimientos?.find((r) => r.moneda === "ARS");
+    if (ars && Number.isFinite(Number(ars.apy))) map[e.entidad] = Number(ars.apy);
+  }
+  return map;
+}
+
 // Días calendario desde una fecha "YYYY-MM-DD" o timestamptz, nunca negativo.
 // Skins CS2: precio mínimo de mercado en USD desde Skinport (una sola llamada
 // para todo el catálogo). Deno maneja brotli y no hay CORS server-side.
@@ -116,7 +146,7 @@ Deno.serve(async (_req) => {
     await Promise.all([
       supabase
         .from("assets")
-        .select("id, user_id, ticker, category, currency, kind, fund_value, fund_tna, current_price, created_at"),
+        .select("id, user_id, account_id, ticker, category, currency, kind, fund_value, fund_tna, fund_units, fund_vcp, current_price, created_at, accounts(fund_fci, fund_api)"),
       supabase.from("asset_history").select("asset_id, qty, price, occurred_on"),
     ]);
   if (assetsErr || histErr) {
@@ -137,13 +167,40 @@ Deno.serve(async (_req) => {
     ),
   ];
   const hasSkins = (assets ?? []).some((a) => a.category === "Skin CS2");
-  const [blue, stocks, cedears, crypto, skins] = await Promise.all([
+  type Acc = { fund_fci: string | null; fund_api: string | null } | null;
+  const accOf = (a: { accounts?: unknown }) => (Array.isArray(a.accounts) ? a.accounts[0] : a.accounts) as Acc;
+  const funds = (assets ?? []).filter((a) => a.kind === "fund");
+  const needFci = funds.some((a) => accOf(a)?.fund_fci);
+  const needRates = funds.some((a) => accOf(a)?.fund_api);
+  const [blue, stocks, cedears, crypto, skins, fci, walletRates] = await Promise.all([
     fetchDolarBlue(),
     fetchData912("/live/arg_stocks"),
     fetchData912("/live/arg_cedears"),
     fetchCrypto(cryptoTickers),
     fetchCs2(hasSkins),
+    needFci ? fetchFci() : Promise.resolve({} as Record<string, FciQuote>),
+    needRates ? fetchWalletRates() : Promise.resolve({} as Record<string, number>),
   ]);
+
+  // 0. Billeteras: valor de cuotaparte y TNA del día.
+  let fundsUpdated = 0;
+  for (const a of funds) {
+    const acc = accOf(a);
+    const q = acc?.fund_fci ? fci[acc.fund_fci] : null;
+    const patch: Record<string, unknown> = {};
+    if (q) {
+      patch.fund_vcp = q.vcp;
+      patch.fund_vcp_date = q.fecha;
+      if (q.tna != null) patch.fund_tna = Math.round(q.tna * 100) / 100;
+      a.fund_vcp = q.vcp;
+    } else if (acc?.fund_api && walletRates[acc.fund_api] != null) {
+      patch.fund_tna = walletRates[acc.fund_api];
+      a.fund_tna = walletRates[acc.fund_api];
+    }
+    if (!Object.keys(patch).length) continue;
+    const { error } = await supabase.from("assets").update(patch).eq("id", a.id);
+    if (!error) fundsUpdated++;
+  }
 
   const liveFor = (a: { ticker: string; category: string }): number | null => {
     if (a.category === "Acción") return stocks[a.ticker] ?? null;
@@ -170,7 +227,10 @@ Deno.serve(async (_req) => {
   for (const a of assets ?? []) {
     const rows = histByAsset[a.id] ?? [];
     let valueARS = 0;
-    if (a.kind === "fund") {
+    if (a.kind === "fund" && a.fund_units != null && Number(a.fund_vcp) > 0) {
+      // Billetera por cuotapartes: exactamente lo que vale en el fondo.
+      valueARS = Number(a.fund_units) * Number(a.fund_vcp);
+    } else if (a.kind === "fund") {
       const dailyRate = Number(a.fund_tna ?? 0) / 100 / 365;
       const principal = Number(a.fund_value ?? 0);
       let accrued = 0;
@@ -213,7 +273,7 @@ Deno.serve(async (_req) => {
   }
 
   return new Response(
-    JSON.stringify({ ok: true, snapshotDate, pricesUpdated, snapshotsUpserted, dolarBlue: blue }),
+    JSON.stringify({ ok: true, snapshotDate, pricesUpdated, fundsUpdated, snapshotsUpserted, dolarBlue: blue }),
     { headers: { "Content-Type": "application/json" } },
   );
 });

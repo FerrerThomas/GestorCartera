@@ -1,23 +1,15 @@
-// Icon presentation is derived from the ticker, never stored per-user-row in the DB.
+// Ícono de respaldo de un activo (cuando no hay logo): se deriva del ticker,
+// nunca se guarda en la base. Colores sólidos con texto blanco, estilo iOS.
 const KNOWN_ICONS = {
-  GGAL: { iconBg: 'rgba(184,227,74,.14)', iconColor: '#b8e34a', iconLabel: 'GG' },
-  YPF: { iconBg: 'rgba(55,193,242,.14)', iconColor: '#37c1f2', iconLabel: 'YP' },
-  AAPL: { iconBg: 'rgba(255,255,255,.1)', iconColor: '#e8eaee', iconLabel: 'AA' },
-  MELI: { iconBg: 'rgba(242,161,55,.14)', iconColor: '#f2a137', iconLabel: 'ME' },
-  BTC: { iconBg: 'rgba(242,161,55,.14)', iconColor: '#f2a137', iconLabel: '₿' },
-  ETH: { iconBg: 'rgba(140,120,250,.16)', iconColor: '#a897ff', iconLabel: 'Ξ' },
-  'FCI.MP': { iconBg: 'rgba(55,193,242,.14)', iconColor: '#37c1f2', iconLabel: 'MP' },
-  USD: { iconBg: 'rgba(255,255,255,.1)', iconColor: '#e8eaee', iconLabel: 'U$' },
+  ARS: { iconBg: '#34C759', iconColor: '#FFFFFF', iconLabel: '$' },
+  USD: { iconBg: '#248A3D', iconColor: '#FFFFFF', iconLabel: 'US$' },
+  SALDO: { iconBg: '#0A84FF', iconColor: '#FFFFFF', iconLabel: '$' },
+  BTC: { iconBg: '#F7931A', iconColor: '#FFFFFF', iconLabel: '₿' },
+  ETH: { iconBg: '#627EEA', iconColor: '#FFFFFF', iconLabel: 'Ξ' },
+  USDT: { iconBg: '#26A17B', iconColor: '#FFFFFF', iconLabel: '₮' },
 };
 
-const FALLBACK_PALETTE = [
-  { iconBg: 'rgba(184,227,74,.14)', iconColor: '#b8e34a' },
-  { iconBg: 'rgba(55,193,242,.14)', iconColor: '#37c1f2' },
-  { iconBg: 'rgba(242,161,55,.14)', iconColor: '#f2a137' },
-  { iconBg: 'rgba(140,120,250,.16)', iconColor: '#a897ff' },
-  { iconBg: 'rgba(240,112,95,.14)', iconColor: '#f0705f' },
-  { iconBg: 'rgba(255,255,255,.1)', iconColor: '#e8eaee' },
-];
+const FALLBACK_PALETTE = ['#5856D6', '#0A84FF', '#30B0C7', '#FF9500', '#AF52DE', '#FF2D55', '#3A3A3C', '#34C759'];
 
 function hashString(str) {
   let hash = 0;
@@ -31,6 +23,9 @@ function hashString(str) {
 export function getAssetIcon(ticker) {
   const key = (ticker ?? '').toUpperCase();
   if (KNOWN_ICONS[key]) return KNOWN_ICONS[key];
-  const palette = FALLBACK_PALETTE[hashString(key) % FALLBACK_PALETTE.length];
-  return { ...palette, iconLabel: key.slice(0, 2) || '??' };
+  return {
+    iconBg: FALLBACK_PALETTE[hashString(key) % FALLBACK_PALETTE.length],
+    iconColor: '#FFFFFF',
+    iconLabel: key.replace(/[^A-Z0-9]/g, '').slice(0, 2) || '??',
+  };
 }
